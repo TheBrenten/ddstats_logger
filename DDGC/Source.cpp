@@ -72,7 +72,7 @@ DWORD enemiesKilledOffset = 0x1BC;
 vector <int> enemiesKilledVector;
 int deathType;
 DWORD deathTypeBaseAddress = 0x001F30C0;
-DWORD deathTypeHitOffset = 0x1C4;
+DWORD deathTypeOffset = 0x1C4;
 int alive;
 DWORD aliveBaseAddress = 0x001F30C0;
 DWORD aliveOffset = 0x1A4;
@@ -155,6 +155,7 @@ int main() {
 				if (!alive && recording == true) {
 					recording = false;
 					// submit
+					commitVectors(); // one last commit to make sure death time is accurate
 					writeLogFile();
 					resetVectors(); // reset after submit
 					testSubmitCounter++;
@@ -217,6 +218,7 @@ void collectGameVars(HANDLE hProcHandle) {
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &inGameTimer, sizeof(inGameTimer), NULL);
 		if ((inGameTimer < oldInGameTimer) && recording) {
 			// submit, but use oldInGameTimer var instead of new... then continue.
+			deathType = -1; // did not die, so no death type.
 			writeLogFile();
 			resetVectors(); // reset after submit
 			testSubmitCounter++;
@@ -282,6 +284,15 @@ void collectGameVars(HANDLE hProcHandle) {
 		pointerAddr = pTemp + enemiesAliveOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &enemiesAlive, sizeof(enemiesAlive), NULL);
 	}
+	// deathType
+	pointer = exeBaseAddress + deathTypeBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for death type." << endl;
+	}
+	else {
+		pointerAddr = pTemp + deathTypeOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &deathType, sizeof(deathType), NULL);
+	}
 }
 
 uintptr_t GetModuleBaseAddress(DWORD dwProcID, TCHAR *szModuleName) {
@@ -304,21 +315,43 @@ uintptr_t GetModuleBaseAddress(DWORD dwProcID, TCHAR *szModuleName) {
 }
 
 void writeLogFile() {
+	DWORD pointer;
+	DWORD pTemp;
+	DWORD pointerAddr;
+
+	// get playerID
+	pointer = exeBaseAddress + playerIDBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for playerID." << endl;
+	}
+	else {
+		pointerAddr = pTemp + playerIDOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerID, sizeof(playerID), NULL);
+	}
 	float accuracy;
 	if (daggersFired > 0.0)
 		accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
 	else
 		accuracy = 0.0;
 	json log = {
-		{ "inGameTimer", inGameTimer },
+		{"playerID", playerID},
+		{"inGameTimer", inGameTimer},
+		{"inGameTimerVector", inGameTimerVector},
 		{"gems", gems},
+		{"gemsVector", gemsVector},
 		{"homingDaggers", homingDaggers},
+		{"homingDaggersVector", homingDaggersVector},
 		{"daggersFired", daggersFired},
+		{"daggersFiredVector", daggersFiredVector},
 		{"daggersHit", daggersHit},
+		{"daggersHitVector", daggersHitVector},
 		{"accuracy", accuracy},
 		{"enemiesAlive", enemiesAlive},
-		{"enemiesKilled", enemiesKilled}
+		{"enemiesAliveVector", enemiesAliveVector},
+		{"enemiesKilled", enemiesKilled},
+		{"enemiesKilledVector", enemiesKilledVector},
+		{"deathType", deathType}
 	};
 	ofstream o(to_string(clock()) + ".json");
-	o << setw(4) << << setprecision(4) << log << endl;
+	o << setw(4) << setprecision(4) << log << endl;
 }
