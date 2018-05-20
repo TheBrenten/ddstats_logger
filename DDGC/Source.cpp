@@ -21,18 +21,32 @@ uintptr_t exeBaseAddress = 0;
 
 bool isGameAvail;
 bool updateOnNextRun;
+bool recording = false;
+
+// testing
+int testSubmitCounter = 0;
 
 // GAME VARS
+float oldInGameTimer;
 float inGameTimer;
 DWORD inGameTimerBaseAddress = 0x001F30C0;
 DWORD inGameTimerOffset = 0x1A0;
+int gems;
+DWORD gemsBaseAddress = 0x001F30C0;
+DWORD gemsOffset = 0x1C0;
+int homingDaggers;
+DWORD homingDaggersBaseAddress = 0x001F8084;
+DWORD homingDaggersOffset = 0x224;
+int daggersFired;
+DWORD daggersFiredBaseAddress = 0x001F30C0;
+DWORD daggersFiredOffset = 0x1B4;
+int alive;
+DWORD aliveBaseAddress = 0x001F30C0;
+DWORD aliveOffset = 0x1A4;
 
 // GEM VARS
 bool gemStatus = false;
-int gemValue;
 float gemOnScreenValue;
-DWORD gemBaseAddress = 0x001F30C0;
-DWORD gemOffset = 0x1C0;
 
 int main() {
 	HWND hGameWindow = NULL;
@@ -74,8 +88,12 @@ int main() {
 				cout << "                      ddstats.com" << endl;
 				cout << "------------------------------------------------------" << endl << endl;
 				cout << "Game Status: " << gameStatus << endl << endl;
-				cout << "[F1] Toggle Gem Counter -> " << sGemStatus << " <-" << to_string(gemValue) << endl;
-				cout << "In Game Timer: " << to_string(inGameTimer) << endl;
+				cout << "[F1] Monitor -> " << sGemStatus << " <-" << endl;
+				cout << "In Game Timer: " << inGameTimer << endl;
+				cout << "Gem Count: " << gems << endl;
+				cout << "Homing Dagger Count: " << homingDaggers << endl;
+				cout << "Daggers Fired: " << daggersFired << endl;
+				cout << "Submissions: " << testSubmitCounter << endl;
 				cout << "[F10] Exit" << endl;
 				updateOnNextRun = false;
 				timeSinceLastUpdate = clock();
@@ -85,6 +103,15 @@ int main() {
 			if (isGameAvail) {
 				//writeToMemory(hProcHandle);
 				collectGameVars(hProcHandle);
+				if (alive && inGameTimer > 0) {
+					recording = true;
+				}
+				if (!alive && recording == true) {
+					recording = false;
+					// submit
+					testSubmitCounter++;
+				}
+
 			}
 
 			if (clock() - onePressTimer > 400) {
@@ -132,24 +159,50 @@ void collectGameVars(HANDLE hProcHandle) {
 	DWORD pointerAddr;
 
 	if (gemStatus) {
-		// gems
-		pointer = exeBaseAddress + gemBaseAddress;
-		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL))
-			cout << "Failed to read address for gem counter." << endl;
-		pointerAddr = pTemp + gemOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gemValue, sizeof(gemValue), NULL);
-		// time
+		// inGameTimer
 		pointer = exeBaseAddress + inGameTimerBaseAddress;
-		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL))
+		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
 			cout << "Failed to read address for in game timer." << endl;
-		pointerAddr = pTemp + inGameTimerOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &inGameTimer, sizeof(inGameTimer), NULL);
+		}
+		else {
+			pointerAddr = pTemp + inGameTimerOffset;
+			oldInGameTimer = inGameTimer;
+			ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &inGameTimer, sizeof(inGameTimer), NULL);
+			if ((inGameTimer < oldInGameTimer) && recording) {
+				// submit, but use oldInGameTimer var instead of new... then continue.
+				testSubmitCounter++;
+			}
+		}
+		// alive
+		pointer = exeBaseAddress + aliveBaseAddress;
+		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+			cout << "Failed to read address for alive." << endl;
+		} else {
+			pointerAddr = pTemp + aliveOffset;
+			ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &alive, sizeof(alive), NULL);
+		}
+		// gems
+		pointer = exeBaseAddress + gemsBaseAddress;
+		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+			cout << "Failed to read address for gem counter." << endl;
+		} else {
+			pointerAddr = pTemp + gemsOffset;
+			ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gems, sizeof(gems), NULL);
+		}
+		// daggersFired
+		pointer = exeBaseAddress + daggersFiredBaseAddress;
+		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+			cout << "Failed to read address for daggers fired." << endl;
+		} else {
+			pointerAddr = pTemp + daggersFiredOffset;
+			ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &daggersFired, sizeof(daggersFired), NULL);
+		}
 	}
 }
 
 
 void writeToMemory(HANDLE hProcHandle) {
-	DWORD pointer = exeBaseAddress + gemBaseAddress;
+	DWORD pointer = exeBaseAddress + gemsBaseAddress;
 	DWORD pTemp;
 
 	DWORD pointerAddr;
@@ -159,8 +212,8 @@ void writeToMemory(HANDLE hProcHandle) {
 			cout << "Failed to read address for gem counter." << endl;
 
 		pointerAddr = pTemp + 0x1C0;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gemValue, sizeof(gemValue), NULL);
-		gemOnScreenValue = gemValue;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gems, sizeof(gems), NULL);
+		gemOnScreenValue = gems;
 
 		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL))
 			cout << "Failed to read address for player best." << endl;
