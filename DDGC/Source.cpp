@@ -7,7 +7,8 @@
 #include <ctime>
 #include <tlhelp32.h>
 #include <tchar.h>
-#include "json.hpp"
+#include <nlohmann/json.hpp>
+#include <cpr/cpr.h>
 
 using namespace std;
 using json = nlohmann::json;
