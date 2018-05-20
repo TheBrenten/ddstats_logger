@@ -23,6 +23,7 @@ void collectGameVars(HANDLE hProcHandle);
 void commitVectors();
 void resetVectors();
 void writeLogFile();
+void sendToServer();
 
 string gameName = "Devil Daggers";
 LPCSTR gameWindow = "Devil Daggers";
@@ -157,7 +158,7 @@ int main() {
 					recording = false;
 					// submit
 					commitVectors(); // one last commit to make sure death time is accurate
-					writeLogFile();
+					sendToServer();
 					resetVectors(); // reset after submit
 					testSubmitCounter++;
 				}
@@ -220,7 +221,7 @@ void collectGameVars(HANDLE hProcHandle) {
 		if ((inGameTimer < oldInGameTimer) && recording) {
 			// submit, but use oldInGameTimer var instead of new... then continue.
 			deathType = -1; // did not die, so no death type.
-			writeLogFile();
+			sendToServer();
 			resetVectors(); // reset after submit
 			testSubmitCounter++;
 		}
@@ -355,4 +356,47 @@ void writeLogFile() {
 	};
 	ofstream o(to_string(clock()) + ".json");
 	o << setw(4) << setprecision(4) << log << endl;
+}
+
+void sendToServer() {
+	DWORD pointer;
+	DWORD pTemp;
+	DWORD pointerAddr;
+
+	// get playerID
+	pointer = exeBaseAddress + playerIDBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for playerID." << endl;
+	}
+	else {
+		pointerAddr = pTemp + playerIDOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerID, sizeof(playerID), NULL);
+	}
+	float accuracy;
+	if (daggersFired > 0.0)
+		accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
+	else
+		accuracy = 0.0;
+	json log = {
+		{ "playerID", playerID },
+		{ "inGameTimer", inGameTimer },
+		{ "inGameTimerVector", inGameTimerVector },
+		{ "gems", gems },
+		{ "gemsVector", gemsVector },
+		{ "homingDaggers", homingDaggers },
+		{ "homingDaggersVector", homingDaggersVector },
+		{ "daggersFired", daggersFired },
+		{ "daggersFiredVector", daggersFiredVector },
+		{ "daggersHit", daggersHit },
+		{ "daggersHitVector", daggersHitVector },
+		{ "accuracy", accuracy },
+		{ "enemiesAlive", enemiesAlive },
+		{ "enemiesAliveVector", enemiesAliveVector },
+		{ "enemiesKilled", enemiesKilled },
+		{ "enemiesKilledVector", enemiesKilledVector },
+		{ "deathType", deathType }
+	};
+	auto r = cpr::PostAsync(cpr::Url{ "http://10.0.1.222:5000/backend_score_submission" },
+					   cpr::Body{ log.dump() },
+					   cpr::Header{ {"Content-Type", "application/json"} });
 }
