@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip> 
 #include <windows.h>
 #include <string>
 #include <ctime>
@@ -40,6 +41,18 @@ DWORD homingDaggersOffset = 0x224;
 int daggersFired;
 DWORD daggersFiredBaseAddress = 0x001F30C0;
 DWORD daggersFiredOffset = 0x1B4;
+int daggersHit;
+DWORD daggersHitBaseAddress = 0x001F30C0;
+DWORD daggersHitOffset = 0x1B8;
+int enemiesAlive;
+DWORD enemiesAliveBaseAddress = 0x001F30C0;
+DWORD enemiesAliveOffset = 0x1FC;
+int enemiesKilled;
+DWORD enemiesKilledBaseAddress = 0x001F30C0;
+DWORD enemiesKilledOffset = 0x1BC;
+int deathType;
+DWORD deathTypeBaseAddress = 0x001F30C0;
+DWORD deathTypeHitOffset = 0x1C4;
 int alive;
 DWORD aliveBaseAddress = 0x001F30C0;
 DWORD aliveOffset = 0x1A4;
@@ -91,13 +104,19 @@ int main() {
 				cout << "                      ddstats.com" << endl;
 				cout << "------------------------------------------------------" << endl << endl;
 				cout << "Game Status: " << gameStatus << endl << endl;
-				cout << "[F1] Monitor -> " << sGemStatus << " <-" << endl;
 				cout << "In Game Timer: " << inGameTimer << endl;
 				cout << "Gem Count: " << gems << endl;
 				cout << "Homing Dagger Count: " << homingDaggers << endl;
 				cout << "Daggers Fired: " << daggersFired << endl;
+				cout << "Daggers Hit: " << daggersHit << endl;
+				if (daggersFired > 0.0)
+					cout << "Accuracy: " << setprecision(4) << ((float) daggersHit / (float) daggersFired) * 100.0 << "%" << endl;
+				else
+					cout << "Accuracy: 0.0%" << endl;
+				cout << "Enemies Alive: " << enemiesAlive << endl;
+				cout << "Enemies Killed: " << enemiesKilled << endl;
 				cout << "Submissions: " << testSubmitCounter << endl;
-				cout << "[F10] Exit" << endl;
+				cout << endl << "[F10] Exit" << endl;
 				updateOnNextRun = false;
 				timeSinceLastUpdate = clock();
 
@@ -202,6 +221,33 @@ void collectGameVars(HANDLE hProcHandle) {
 	} else {
 		pointerAddr = pTemp + daggersFiredOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &daggersFired, sizeof(daggersFired), NULL);
+	}
+	// daggersHit
+	pointer = exeBaseAddress + daggersHitBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for daggers hit." << endl;
+	}
+	else {
+		pointerAddr = pTemp + daggersHitOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &daggersHit, sizeof(daggersHit), NULL);
+	}
+	// enemiesKilled
+	pointer = exeBaseAddress + enemiesKilledBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for enemies killed." << endl;
+	}
+	else {
+		pointerAddr = pTemp + enemiesKilledOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &enemiesKilled, sizeof(enemiesKilled), NULL);
+	}
+	// enemiesAlive
+	pointer = exeBaseAddress + enemiesAliveBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for enemies alive." << endl;
+	}
+	else {
+		pointerAddr = pTemp + enemiesAliveOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &enemiesAlive, sizeof(enemiesAlive), NULL);
 	}
 }
 
