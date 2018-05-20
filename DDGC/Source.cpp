@@ -10,7 +10,7 @@ using namespace std;
 HANDLE hProcHandle = NULL;
 
 uintptr_t GetModuleBaseAddress(DWORD dwProcID, TCHAR *szModuleName);
-DWORD findDmaAddy(int pointerLevel, HANDLE hProcHandle, DWORD offsets[], DWORD BaseAddress);
+// DWORD findDmaAddy(int pointerLevel, HANDLE hProcHandle, DWORD offsets[], DWORD BaseAddress);
 void writeToMemory(HANDLE hProcHandle);
 void collectGameVars(HANDLE hProcHandle);
 
@@ -43,6 +43,9 @@ DWORD daggersFiredOffset = 0x1B4;
 int alive;
 DWORD aliveBaseAddress = 0x001F30C0;
 DWORD aliveOffset = 0x1A4;
+bool isReplay;
+DWORD isReplayBaseAddress = 0x001F30C0;
+DWORD isReplayOffset = 0x35D;
 
 // GEM VARS
 bool gemStatus = false;
@@ -103,7 +106,7 @@ int main() {
 			if (isGameAvail) {
 				//writeToMemory(hProcHandle);
 				collectGameVars(hProcHandle);
-				if (alive && inGameTimer > 0) {
+				if (alive && inGameTimer > 0 && !isReplay) {
 					recording = true;
 				}
 				if (!alive && recording == true) {
@@ -114,89 +117,91 @@ int main() {
 
 			}
 
-			if (clock() - onePressTimer > 400) {
-				if (isGameAvail) {
-					if (GetAsyncKeyState(VK_F1)) {
-						onePressTimer = clock();
-						gemStatus = !gemStatus;
-						updateOnNextRun = true;
-						if (gemStatus) sGemStatus = "ON";
-						else sGemStatus = "OFF";
-					}
-				}
-			}
+			//if (clock() - onePressTimer > 400) {
+			//	if (isGameAvail) {
+			//		if (GetAsyncKeyState(VK_F1)) {
+			//			onePressTimer = clock();
+			//			gemStatus = !gemStatus;
+			//			updateOnNextRun = true;
+			//			if (gemStatus) sGemStatus = "ON";
+			//			else sGemStatus = "OFF";
+			//		}
+			//	}
+			//}
 		}
 	}
 
 	return ERROR_SUCCESS;
 }
 
-DWORD findDmaAddy(int pointerLevel, HANDLE hProcHandle, DWORD offsets[], DWORD BaseAddress) {
-	DWORD pointer = BaseAddress;
-	DWORD pTemp;
-
-	DWORD pointerAddr;
-	for (int i = 0; i < pointerLevel; i++) {
-		if (i == 0) {
-			ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL);
-		}
-
-		pointerAddr = pTemp + offsets[i];
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &pTemp, sizeof(pTemp), NULL);
-		cout << "test" << endl;
-	}
-	return pointerAddr;
-}
-
-void readPointer(DWORD baseAddress, DWORD offset) {
-	DWORD pointer = exeBaseAddress + baseAddress;
-}
-
+//DWORD findDmaAddy(int pointerLevel, HANDLE hProcHandle, DWORD offsets[], DWORD BaseAddress) {
+//	DWORD pointer = BaseAddress;
+//	DWORD pTemp;
+//
+//	DWORD pointerAddr;
+//	for (int i = 0; i < pointerLevel; i++) {
+//		if (i == 0) {
+//			ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL);
+//		}
+//
+//		pointerAddr = pTemp + offsets[i];
+//		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &pTemp, sizeof(pTemp), NULL);
+//		cout << "test" << endl;
+//	}
+//	return pointerAddr;
+//}
 
 void collectGameVars(HANDLE hProcHandle) {
 	DWORD pointer;
 	DWORD pTemp;
 	DWORD pointerAddr;
 
-	if (gemStatus) {
-		// inGameTimer
-		pointer = exeBaseAddress + inGameTimerBaseAddress;
-		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-			cout << "Failed to read address for in game timer." << endl;
+	// inGameTimer
+	pointer = exeBaseAddress + inGameTimerBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for in game timer." << endl;
+	}
+	else {
+		pointerAddr = pTemp + inGameTimerOffset;
+		oldInGameTimer = inGameTimer;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &inGameTimer, sizeof(inGameTimer), NULL);
+		if ((inGameTimer < oldInGameTimer) && recording) {
+			// submit, but use oldInGameTimer var instead of new... then continue.
+			testSubmitCounter++;
 		}
-		else {
-			pointerAddr = pTemp + inGameTimerOffset;
-			oldInGameTimer = inGameTimer;
-			ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &inGameTimer, sizeof(inGameTimer), NULL);
-			if ((inGameTimer < oldInGameTimer) && recording) {
-				// submit, but use oldInGameTimer var instead of new... then continue.
-				testSubmitCounter++;
-			}
-		}
-		// alive
-		pointer = exeBaseAddress + aliveBaseAddress;
-		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-			cout << "Failed to read address for alive." << endl;
-		} else {
-			pointerAddr = pTemp + aliveOffset;
-			ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &alive, sizeof(alive), NULL);
-		}
-		// gems
-		pointer = exeBaseAddress + gemsBaseAddress;
-		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-			cout << "Failed to read address for gem counter." << endl;
-		} else {
-			pointerAddr = pTemp + gemsOffset;
-			ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gems, sizeof(gems), NULL);
-		}
-		// daggersFired
-		pointer = exeBaseAddress + daggersFiredBaseAddress;
-		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-			cout << "Failed to read address for daggers fired." << endl;
-		} else {
-			pointerAddr = pTemp + daggersFiredOffset;
-			ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &daggersFired, sizeof(daggersFired), NULL);
-		}
+	}
+	// isReplay
+	pointer = exeBaseAddress + isReplayBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for alive." << endl;
+	}
+	else {
+		pointerAddr = pTemp + isReplayOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &isReplay, sizeof(isReplay), NULL);
+	}
+	// alive
+	pointer = exeBaseAddress + aliveBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for alive." << endl;
+	} else {
+		pointerAddr = pTemp + aliveOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &alive, sizeof(alive), NULL);
+	}
+	// gems
+	pointer = exeBaseAddress + gemsBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for gem counter." << endl;
+	} else {
+		pointerAddr = pTemp + gemsOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gems, sizeof(gems), NULL);
+	}
+	// daggersFired
+	pointer = exeBaseAddress + daggersFiredBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for daggers fired." << endl;
+	} else {
+		pointerAddr = pTemp + daggersFiredOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &daggersFired, sizeof(daggersFired), NULL);
 	}
 }
 
