@@ -250,6 +250,18 @@ void collectGameVars(HANDLE hProcHandle) {
 		pointerAddr = pTemp + gemsOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gems, sizeof(gems), NULL);
 	}
+	// homingDaggers
+	pointer = exeBaseAddress + homingDaggersBaseAddress;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << "Failed to read address for homing daggers." << endl;
+	}
+	else {
+		// 2 pointer offsets for homingDaggers
+		pointerAddr = pTemp + 0x0;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &pTemp, sizeof(pTemp), NULL);
+		pointerAddr = pTemp + homingDaggersOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &homingDaggers, sizeof(homingDaggers), NULL);
+	}
 	// daggersFired
 	pointer = exeBaseAddress + daggersFiredBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
