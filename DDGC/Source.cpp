@@ -14,7 +14,7 @@ using namespace std;
 using json = nlohmann::json;
 
 // interval in seconds for how often variables are recorded
-const int INTERVAL = 1;
+int interval = 1;
 
 HANDLE hProcHandle = NULL;
 
@@ -183,7 +183,7 @@ int main() {
 }
 
 void commitVectors() {
-	recordingCounter += INTERVAL;
+	recordingCounter += interval;
 	inGameTimerVector.push_back(inGameTimer);
 	gemsVector.push_back(gems);
 	homingDaggersVector.push_back(homingDaggers);
@@ -330,13 +330,14 @@ void writeLogFile() {
 		pointerAddr = pTemp + playerIDOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerID, sizeof(playerID), NULL);
 	}
-	float accuracy;
-	if (daggersFired > 0.0)
-		accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
-	else
-		accuracy = 0.0;
+	//float accuracy;
+	//if (daggersFired > 0.0)
+	//	accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
+	//else
+	//	accuracy = 0.0;
 	json log = {
 		{"playerID", playerID},
+		{"granularity", interval},
 		{"inGameTimer", inGameTimer},
 		{"inGameTimerVector", inGameTimerVector},
 		{"gems", gems},
@@ -347,7 +348,7 @@ void writeLogFile() {
 		{"daggersFiredVector", daggersFiredVector},
 		{"daggersHit", daggersHit},
 		{"daggersHitVector", daggersHitVector},
-		{"accuracy", accuracy},
+		// {"accuracy", accuracy},
 		{"enemiesAlive", enemiesAlive},
 		{"enemiesAliveVector", enemiesAliveVector},
 		{"enemiesKilled", enemiesKilled},
@@ -372,13 +373,14 @@ void sendToServer() {
 		pointerAddr = pTemp + playerIDOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerID, sizeof(playerID), NULL);
 	}
-	float accuracy;
-	if (daggersFired > 0.0)
-		accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
-	else
-		accuracy = 0.0;
+	//float accuracy;
+	//if (daggersFired > 0.0)
+	//	accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
+	//else
+	//	accuracy = 0.0;
 	json log = {
 		{ "playerID", playerID },
+		{"granularity", interval},
 		{ "inGameTimer", inGameTimer },
 		{ "inGameTimerVector", inGameTimerVector },
 		{ "gems", gems },
@@ -389,7 +391,7 @@ void sendToServer() {
 		{ "daggersFiredVector", daggersFiredVector },
 		{ "daggersHit", daggersHit },
 		{ "daggersHitVector", daggersHitVector },
-		{ "accuracy", accuracy },
+		// { "accuracy", accuracy },
 		{ "enemiesAlive", enemiesAlive },
 		{ "enemiesAliveVector", enemiesAliveVector },
 		{ "enemiesKilled", enemiesKilled },
