@@ -75,7 +75,7 @@ vector <int> enemiesKilledVector;
 int deathType;
 DWORD deathTypeBaseAddress = 0x001F30C0;
 DWORD deathTypeOffset = 0x1C4;
-int alive;
+bool alive;
 DWORD aliveBaseAddress = 0x001F30C0;
 DWORD aliveOffset = 0x1A4;
 bool isReplay;
@@ -123,7 +123,7 @@ int main() {
 			if (updateOnNextRun || clock() - timeSinceLastUpdate > 5000) {
 				system("cls");
 				cout << "------------------------------------------------------" << endl;
-				cout << "                      ddstats.com" << endl;
+				cout << "                      ddstats" << endl;
 				cout << "------------------------------------------------------" << endl << endl;
 				cout << "Game Status: " << gameStatus << endl << endl;
 				cout << "In Game Timer: " << inGameTimer << endl;
@@ -137,7 +137,6 @@ int main() {
 					cout << "Accuracy: 0%" << endl;
 				cout << "Enemies Alive: " << enemiesAlive << endl;
 				cout << "Enemies Killed: " << enemiesKilled << endl;
-				cout << "In Game Timer Vector Size: " << inGameTimerVector.size() << endl;
 				cout << "Submissions: " << testSubmitCounter << endl;
 				cout << endl << "[F10] Exit" << endl;
 				updateOnNextRun = false;
@@ -380,7 +379,7 @@ void sendToServer() {
 	//	accuracy = 0.0;
 	json log = {
 		{ "playerID", playerID },
-		{"granularity", interval},
+		{ "granularity", interval },
 		{ "inGameTimer", inGameTimer },
 		{ "inGameTimerVector", inGameTimerVector },
 		{ "gems", gems },
@@ -398,7 +397,7 @@ void sendToServer() {
 		{ "enemiesKilledVector", enemiesKilledVector },
 		{ "deathType", deathType }
 	};
-	auto r = cpr::PostAsync(cpr::Url{ "http://10.0.1.222:5000/backend_score_submission" },
+	auto r = cpr::PostAsync(cpr::Url{ "http://23.239.31.125:5666/backend_score_submission" },
 					   cpr::Body{ log.dump() },
 					   cpr::Header{ {"Content-Type", "application/json"} });
 }
