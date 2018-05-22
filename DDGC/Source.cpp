@@ -155,6 +155,9 @@ int main() {
 				}
 				if (!alive && recording == true) {
 					recording = false;
+					// this is to assure the correct last entry when user dies
+					if (!homingDaggersVector.empty())
+						homingDaggers = homingDaggersVector.back();
 					// submit
 					commitVectors(); // one last commit to make sure death time is accurate
 					sendToServer();
@@ -409,7 +412,8 @@ void sendToServer() {
 		{ "enemiesKilledVector", enemiesKilledVector },
 		{ "deathType", deathType }
 	};
-	auto r = cpr::PostAsync(cpr::Url{ "http://23.239.31.125:5666/backend_score_submission" },
+	//auto r = cpr::PostAsync(cpr::Url{ "http://23.239.31.125:5666/backend_score_submission" },
+	auto r = cpr::PostAsync(cpr::Url{ "http://10.0.1.222:5666/submit_game" },
 					   cpr::Body{ log.dump() },
 					   cpr::Header{ {"Content-Type", "application/json"} });
 }
