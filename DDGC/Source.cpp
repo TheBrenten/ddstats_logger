@@ -53,7 +53,7 @@ DWORD gemsBaseAddress = 0x001F30C0;
 DWORD gemsOffset = 0x1C0;
 vector <int> gemsVector;
 int homingDaggers;
-DWORD homingDaggersBaseAddress = 0x001F8084;
+DWORD homingDaggersBaseAddress = 0x001F8084; 
 DWORD homingDaggersOffset = 0x224;
 vector <int> homingDaggersVector;
 int daggersFired;
@@ -412,8 +412,8 @@ void sendToServer() {
 		{ "enemiesKilledVector", enemiesKilledVector },
 		{ "deathType", deathType }
 	};
-	//auto r = cpr::PostAsync(cpr::Url{ "http://23.239.31.125:5666/backend_score_submission" },
-	auto r = cpr::PostAsync(cpr::Url{ "http://10.0.1.222:5666/submit_game" },
+	auto r = cpr::PostAsync(cpr::Url{ "http://23.239.31.125:5666/submit_game" },
+	//auto r = cpr::PostAsync(cpr::Url{ "http://10.0.1.222:5666/submit_game" },
 					   cpr::Body{ log.dump() },
 					   cpr::Header{ {"Content-Type", "application/json"} });
 }
