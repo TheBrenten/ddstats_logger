@@ -39,6 +39,8 @@ int recordingCounter = 0;
 // testing
 int testSubmitCounter = 0;
 
+// std::vector<std::future<string>> pending_futures;
+
 // GAME VARS
 float oldInGameTimer;
 float inGameTimer;
@@ -138,6 +140,11 @@ int main() {
 				cout << "Enemies Alive: " << enemiesAlive << endl;
 				cout << "Enemies Killed: " << enemiesKilled << endl;
 				cout << "Submissions: " << testSubmitCounter << endl;
+				//auto line = move(pending_futures.front());
+				//if (line.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+				//	cout << line.get() << endl;
+				//	pending_futures.erase(pending_futures.begin());
+				//}
 				cout << endl << "[F10] Exit" << endl;
 				updateOnNextRun = false;
 				timeSinceLastUpdate = clock();
@@ -179,6 +186,7 @@ int main() {
 			//	}
 			//}
 		}
+		Sleep(15); // cut back on some(?) overhead
 	}
 
 	return ERROR_SUCCESS;
@@ -412,8 +420,24 @@ void sendToServer() {
 		{ "enemiesKilledVector", enemiesKilledVector },
 		{ "deathType", deathType }
 	};
-	auto r = cpr::PostAsync(cpr::Url{ "http://23.239.31.125:5666/submit_game" },
+	auto r = cpr::PostAsync(cpr::Url{ "http://www.ddstats.com/api/submit_game" },
 	//auto r = cpr::PostAsync(cpr::Url{ "http://10.0.1.222:5666/submit_game" },
 					   cpr::Body{ log.dump() },
 					   cpr::Header{ {"Content-Type", "application/json"} });
+
+
+	//auto future_text = cpr::PostCallback([](cpr::Response r) {
+	//	return r.text;
+	//}, 
+	//	cpr::Url{ "http://ddstats.com/submit_game" },
+	//	cpr::Body{ log.dump() }, 
+	//	cpr::Header{ { "Content-Type", "application/json" } });
+
+	//pending_futures.push_back(std::move(future_text));
+	//// Sometime later
+	//if (future_text.wait_for(chrono::seconds(0)) == future_status::ready) {
+	//	cout << future_text.get() << endl;
+	//}
+
+
 }
