@@ -23,7 +23,7 @@ void collectGameVars(HANDLE hProcHandle);
 void commitVectors();
 void resetVectors();
 void writeLogFile();
-void sendToServer();
+future<cpr::Response> sendToServer();
 
 string gameName = "Devil Daggers";
 LPCSTR gameWindow = "Devil Daggers";
@@ -37,9 +37,10 @@ bool recording = false;
 int recordingCounter = 0;
 
 // testing
-int testSubmitCounter = 0;
-
-// std::vector<std::future<string>> pending_futures;
+int submitCounter = 0;
+future<cpr::Response> future_response = future<cpr::Response>{};
+string errorLine = "";
+json jsonResponse;
 
 // GAME VARS
 float oldInGameTimer;
@@ -139,12 +140,27 @@ int main() {
 					cout << "Accuracy: 0%" << endl;
 				cout << "Enemies Alive: " << enemiesAlive << endl;
 				cout << "Enemies Killed: " << enemiesKilled << endl;
-				cout << "Submissions: " << testSubmitCounter << endl;
-				//auto line = move(pending_futures.front());
-				//if (line.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-				//	cout << line.get() << endl;
-				//	pending_futures.erase(pending_futures.begin());
-				//}
+				if (future_response.valid()) {
+					if (future_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+						auto r = future_response.get();
+						if (r.status_code >= 400 || r.status_code == 0) {
+							errorLine = "Error [" + to_string(r.status_code) + "] submitting score.";
+							jsonResponse = json();
+						} else {
+							jsonResponse = json::parse(r.text);
+							errorLine = "";
+							submitCounter++;
+						}
+						future_response = future<cpr::Response>{};
+					}
+				}
+				cout << "Submissions: " << submitCounter << endl;
+				if (errorLine != "") {
+					std::cout << std::endl << errorLine << std::endl;
+				}
+				if (!jsonResponse.empty()) {
+					cout << std::endl << jsonResponse.at("message").get<std::string>() << endl;
+				}
 				cout << endl << "[F10] Exit" << endl;
 				updateOnNextRun = false;
 				timeSinceLastUpdate = clock();
@@ -167,9 +183,8 @@ int main() {
 						homingDaggers = homingDaggersVector.back();
 					// submit
 					commitVectors(); // one last commit to make sure death time is accurate
-					sendToServer();
+					future_response = sendToServer();
 					resetVectors(); // reset after submit
-					testSubmitCounter++;
 				}
 
 			}
@@ -231,9 +246,8 @@ void collectGameVars(HANDLE hProcHandle) {
 		if ((inGameTimer < oldInGameTimer) && recording) {
 			// submit, but use oldInGameTimer var instead of new... then continue.
 			deathType = -1; // did not die, so no death type.
-			sendToServer();
+			future_response = sendToServer();
 			resetVectors(); // reset after submit
-			testSubmitCounter++;
 		}
 	}
 	// isReplay
@@ -381,7 +395,7 @@ void writeLogFile() {
 	o << setw(4) << setprecision(4) << log << endl;
 }
 
-void sendToServer() {
+std::future<cpr::Response> sendToServer() {
 	DWORD pointer;
 	DWORD pTemp;
 	DWORD pointerAddr;
@@ -420,18 +434,18 @@ void sendToServer() {
 		{ "enemiesKilledVector", enemiesKilledVector },
 		{ "deathType", deathType }
 	};
-	auto r = cpr::PostAsync(cpr::Url{ "http://www.ddstats.com/api/submit_game" },
+	// auto r = cpr::PostAsync(cpr::Url{ "http://www.ddstats.com/api/submit_game" },
 	//auto r = cpr::PostAsync(cpr::Url{ "http://10.0.1.222:5666/submit_game" },
-					   cpr::Body{ log.dump() },
-					   cpr::Header{ {"Content-Type", "application/json"} });
+					  // cpr::Body{ log.dump() },
+					//   cpr::Header{ {"Content-Type", "application/json"} });
 
 
-	//auto future_text = cpr::PostCallback([](cpr::Response r) {
-	//	return r.text;
-	//}, 
-	//	cpr::Url{ "http://ddstats.com/submit_game" },
-	//	cpr::Body{ log.dump() }, 
-	//	cpr::Header{ { "Content-Type", "application/json" } });
+	auto future_response = cpr::PostCallback([](cpr::Response r) {
+		return r;
+	}, 
+		cpr::Url{ "http://ddstats.com/api/submit_game" },
+		cpr::Body{ log.dump() }, 
+		cpr::Header{ { "Content-Type", "application/json" } });
 
 	//pending_futures.push_back(std::move(future_text));
 	//// Sometime later
@@ -439,5 +453,6 @@ void sendToServer() {
 	//	cout << future_text.get() << endl;
 	//}
 
+	return future_response;
 
 }
