@@ -39,6 +39,7 @@ int recordingCounter = 0;
 // testing
 int submitCounter = 0;
 future<cpr::Response> future_response = future<cpr::Response>{};
+double elapsed;
 string errorLine = "";
 json jsonResponse;
 
@@ -144,10 +145,11 @@ int main() {
 					if (future_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
 						auto r = future_response.get();
 						if (r.status_code >= 400 || r.status_code == 0) {
-							errorLine = "Error [" + to_string(r.status_code) + "] submitting score.";
+							errorLine = "Error [" + to_string(r.status_code) + "] submitting run.";
 							jsonResponse = json();
 						} else {
 							jsonResponse = json::parse(r.text);
+							elapsed = r.elapsed;
 							errorLine = "";
 							submitCounter++;
 						}
@@ -159,7 +161,10 @@ int main() {
 					std::cout << std::endl << errorLine << std::endl;
 				}
 				if (!jsonResponse.empty()) {
-					cout << std::endl << jsonResponse.at("message").get<std::string>() << endl;
+					std::cout << std::endl << "Game submitted successfully in " << elapsed << " seconds!" << std::endl;
+					std::cout << "You can access your game at:" << std::endl;
+					std::cout << "https://ddstats.com/api/game/" <<
+						jsonResponse.at("game_id").get<std::int32_t>() << std::endl;
 				}
 				cout << endl << "[F10] Exit" << endl;
 				updateOnNextRun = false;
