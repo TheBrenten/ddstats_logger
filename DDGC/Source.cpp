@@ -24,6 +24,7 @@ void commitVectors();
 void resetVectors();
 void writeLogFile();
 future<cpr::Response> sendToServer();
+void printTitle();
 
 string gameName = "Devil Daggers";
 LPCSTR gameWindow = "Devil Daggers";
@@ -91,6 +92,12 @@ bool gemStatus = false;
 float gemOnScreenValue;
 
 int main() {
+
+	// this sets up the colors for the console
+	HANDLE hConsole;
+	hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+	SetConsoleTextAttribute(hConsole, 832);
+
 	HWND hGameWindow = NULL;
 	int timeSinceLastUpdate = clock();
 	int gameAvailTimer = clock();
@@ -126,26 +133,27 @@ int main() {
 
 			if (updateOnNextRun || clock() - timeSinceLastUpdate > 5000) {
 				system("cls");
-				cout << "------------------------------------------------------" << endl;
-				cout << "                      ddstats" << endl;
-				cout << "------------------------------------------------------" << endl << endl;
-				cout << "Game Status: " << gameStatus << endl << endl;
-				cout << "In Game Timer: " << inGameTimer << endl;
-				cout << "Gem Count: " << gems << endl;
-				cout << "Homing Dagger Count: " << homingDaggers << endl;
-				cout << "Daggers Fired: " << daggersFired << endl;
-				cout << "Daggers Hit: " << daggersHit << endl;
+				//cout << "------------------------------------------------------" << endl;
+				//cout << "                      ddstats" << endl;
+				printTitle();
+				//cout << "------------------------------------------------------" << endl << endl;
+				cout << " Game Status: " << gameStatus << endl << endl;
+				cout << " In Game Timer: " << inGameTimer << endl;
+				cout << " Gem Count: " << gems << endl;
+				cout << " Homing Dagger Count: " << homingDaggers << endl;
+				cout << " Daggers Fired: " << daggersFired << endl;
+				cout << " Daggers Hit: " << daggersHit << endl;
 				if (daggersFired > 0.0)
-					cout << "Accuracy: " << setprecision(4) << ((float) daggersHit / (float) daggersFired) * 100.0 << "%" << endl;
+					cout << " Accuracy: " << setprecision(4) << ((float) daggersHit / (float) daggersFired) * 100.0 << "%" << endl;
 				else
-					cout << "Accuracy: 0%" << endl;
-				cout << "Enemies Alive: " << enemiesAlive << endl;
-				cout << "Enemies Killed: " << enemiesKilled << endl;
+					cout << " Accuracy: 0%" << endl;
+				cout << " Enemies Alive: " << enemiesAlive << endl;
+				cout << " Enemies Killed: " << enemiesKilled << endl;
 				if (future_response.valid()) {
 					if (future_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
 						auto r = future_response.get();
 						if (r.status_code >= 400 || r.status_code == 0) {
-							errorLine = "Error [" + to_string(r.status_code) + "] submitting run.";
+							errorLine = " Error [" + to_string(r.status_code) + "] submitting run.";
 							jsonResponse = json();
 						} else {
 							jsonResponse = json::parse(r.text);
@@ -156,17 +164,17 @@ int main() {
 						future_response = future<cpr::Response>{};
 					}
 				}
-				cout << "Submissions: " << submitCounter << endl;
+				cout << " Submissions: " << submitCounter << endl;
 				if (errorLine != "") {
 					std::cout << std::endl << errorLine << std::endl;
 				}
 				if (!jsonResponse.empty()) {
-					std::cout << std::endl << "Game submitted successfully in " << elapsed << " seconds!" << std::endl;
-					std::cout << "You can access your game at:" << std::endl;
-					std::cout << "https://ddstats.com/api/game/" <<
+					std::cout << std::endl << " Game submitted successfully in " << elapsed << " seconds!" << std::endl;
+					std::cout << " You can access your game at:" << std::endl;
+					std::cout << " https://ddstats.com/api/game/" <<
 						jsonResponse.at("game_id").get<std::int32_t>() << std::endl;
 				}
-				cout << endl << "[F10] Exit" << endl;
+				cout << endl << " [F10] Exit" << endl;
 				updateOnNextRun = false;
 				timeSinceLastUpdate = clock();
 
@@ -242,7 +250,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// inGameTimer
 	pointer = exeBaseAddress + inGameTimerBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for in game timer." << endl;
+		cout << " Failed to read address for in game timer." << endl;
 	}
 	else {
 		pointerAddr = pTemp + inGameTimerOffset;
@@ -258,7 +266,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// isReplay
 	pointer = exeBaseAddress + isReplayBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for alive." << endl;
+		cout << " Failed to read address for alive." << endl;
 	}
 	else {
 		pointerAddr = pTemp + isReplayOffset;
@@ -267,7 +275,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// alive
 	pointer = exeBaseAddress + aliveBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for alive." << endl;
+		cout << " Failed to read address for alive." << endl;
 	} else {
 		pointerAddr = pTemp + aliveOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &alive, sizeof(alive), NULL);
@@ -275,7 +283,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// gems
 	pointer = exeBaseAddress + gemsBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for gem counter." << endl;
+		cout << " Failed to read address for gem counter." << endl;
 	} else {
 		pointerAddr = pTemp + gemsOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gems, sizeof(gems), NULL);
@@ -283,7 +291,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// homingDaggers
 	pointer = exeBaseAddress + homingDaggersBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for homing daggers." << endl;
+		cout << " Failed to read address for homing daggers." << endl;
 	}
 	else {
 		// 2 pointer offsets for homingDaggers
@@ -295,7 +303,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// daggersFired
 	pointer = exeBaseAddress + daggersFiredBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for daggers fired." << endl;
+		cout << " Failed to read address for daggers fired." << endl;
 	} else {
 		pointerAddr = pTemp + daggersFiredOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &daggersFired, sizeof(daggersFired), NULL);
@@ -303,7 +311,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// daggersHit
 	pointer = exeBaseAddress + daggersHitBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for daggers hit." << endl;
+		cout << " Failed to read address for daggers hit." << endl;
 	}
 	else {
 		pointerAddr = pTemp + daggersHitOffset;
@@ -312,7 +320,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// enemiesKilled
 	pointer = exeBaseAddress + enemiesKilledBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for enemies killed." << endl;
+		cout << " Failed to read address for enemies killed." << endl;
 	}
 	else {
 		pointerAddr = pTemp + enemiesKilledOffset;
@@ -321,7 +329,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// enemiesAlive
 	pointer = exeBaseAddress + enemiesAliveBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for enemies alive." << endl;
+		cout << " Failed to read address for enemies alive." << endl;
 	}
 	else {
 		pointerAddr = pTemp + enemiesAliveOffset;
@@ -330,7 +338,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	// deathType
 	pointer = exeBaseAddress + deathTypeBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for death type." << endl;
+		cout << " Failed to read address for death type." << endl;
 	}
 	else {
 		pointerAddr = pTemp + deathTypeOffset;
@@ -365,7 +373,7 @@ void writeLogFile() {
 	// get playerID
 	pointer = exeBaseAddress + playerIDBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for playerID." << endl;
+		cout << " Failed to read address for playerID." << endl;
 	}
 	else {
 		pointerAddr = pTemp + playerIDOffset;
@@ -408,7 +416,7 @@ std::future<cpr::Response> sendToServer() {
 	// get playerID
 	pointer = exeBaseAddress + playerIDBaseAddress;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << "Failed to read address for playerID." << endl;
+		cout << " Failed to read address for playerID." << endl;
 	}
 	else {
 		pointerAddr = pTemp + playerIDOffset;
@@ -459,5 +467,21 @@ std::future<cpr::Response> sendToServer() {
 	//}
 
 	return future_response;
+
+}
+
+void printTitle() {
+
+	std::cout << std::endl;
+	std::cout << "  @@@@@@@   @@@@@@@    @@@@@@   @@@@@@@   @@@@@@   @@@@@@@   @@@@@@" << std::endl;
+	std::cout << "  @@@@@@@@  @@@@@@@@  @@@@@@@   @@@@@@@  @@@@@@@@  @@@@@@@  @@@@@@@" << std::endl;
+	std::cout << "  @@!  @@@  @@!  @@@  !@@         @@!    @@!  @@@    @@!    !@@" << std::endl;
+	std::cout << "  !@!  @!@  !@!  @!@  !@!         !@!    !@!  @!@    !@!    !@!" << std::endl;
+	std::cout << "  @!@  !@!  @!@  !@!  !!@@!!      @!!    @!@!@!@!    @!!    !!@@!!" << std::endl;
+	std::cout << "  !@!  !!!  !@!  !!!   !!@!!!     !!!    !!!@!!!!    !!!     !!@!!!" << std::endl;
+	std::cout << "  !!:  !!!  !!:  !!!       !:!    !!:    !!:  !!!    !!:         !:!" << std::endl;
+	std::cout << "  :!:  !:!  :!:  !:!      !:!     :!:    :!:  !:!    :!:        !:!" << std::endl;
+	std::cout << "   :::: ::   :::: ::  :::: ::      ::    ::   :::     ::    :::: ::" << std::endl;
+	std::cout << "  :: :  :   :: :  :   :: : :       :      :   : :     :     :: : :" << std::endl << std::endl;
 
 }
