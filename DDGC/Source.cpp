@@ -9,9 +9,14 @@
 #include <tchar.h>
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
+#include <curses.h>
+#include <panel.h>
 
 using namespace std;
 using json = nlohmann::json;
+
+// current version
+std::string version = "0.1.9";
 
 // interval in seconds for how often variables are recorded
 int interval = 1;
@@ -24,7 +29,8 @@ void commitVectors();
 void resetVectors();
 void writeLogFile();
 future<cpr::Response> sendToServer();
-void printTitle();
+future<cpr::Response> getMOTD();
+void printTitle(WINDOW *win);
 
 string gameName = "Devil Daggers";
 LPCSTR gameWindow = "Devil Daggers";
@@ -36,10 +42,12 @@ bool updateOnNextRun;
 bool recording = false;
 
 int recordingCounter = 0;
+std::string motd = "";
 
 // testing
 int submitCounter = 0;
 future<cpr::Response> future_response = future<cpr::Response>{};
+future<cpr::Response> future_motd_response = future<cpr::Response>{};
 double elapsed;
 string errorLine = "";
 json jsonResponse;
@@ -93,10 +101,46 @@ float gemOnScreenValue;
 
 int main() {
 
+	// set up curses
+	WINDOW *stdscr = initscr();
+	raw();
+	keypad(stdscr, TRUE);
+	noecho();
+	start_color();
+	curs_set(0);
+	// nodelay();
+
+	int row, col;
+	getmaxyx(stdscr, row, col);
+
+	int coln = 12;
+	int leftAlign = (col - 66) / 2;
+
+	// color setup
+	//init_pair(1, 53, -1);
+	init_pair(1, COLOR_RED, COLOR_BLACK);
+	init_pair(2, COLOR_GREEN, COLOR_BLACK);
+
+	//printw("Type any character to see it in bold\n");
+	//ch = getch();
+	//if (ch == KEY_F(1))
+	//	printw("F1 Key pressed");
+	//else {
+	//	printw("The pressed key is ");
+	//	attron(A_BOLD);
+	//	printw("%c", ch);
+	//	attroff(A_BOLD);
+	//}
+	//refresh();
+	//getch();
+	// endwin();
+
+	// return 0;
+
 	// this sets up the colors for the console
-	HANDLE hConsole;
-	hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-	SetConsoleTextAttribute(hConsole, 832);
+	//HANDLE hConsole;
+	//hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+	//SetConsoleTextAttribute(hConsole, 832);
 
 	HWND hGameWindow = NULL;
 	int timeSinceLastUpdate = clock();
@@ -105,7 +149,9 @@ int main() {
 
 	DWORD dwProcID = NULL;
 	updateOnNextRun = true;
-	string sGemStatus = "OFF";
+	// string sGemStatus = "OFF";
+
+	future_motd_response = getMOTD();
 
 	while (!GetAsyncKeyState(VK_F10)) {
 		if (clock() - gameAvailTimer > 100) {
@@ -131,29 +177,58 @@ int main() {
 				gameStatus = "Devil Daggers not found.";
 			}
 
-			if (updateOnNextRun || clock() - timeSinceLastUpdate > 5000) {
-				system("cls");
-				//cout << "------------------------------------------------------" << endl;
-				//cout << "                      ddstats" << endl;
-				printTitle();
-				//cout << "------------------------------------------------------" << endl << endl;
-				cout << " Game Status: " << gameStatus << endl << endl;
-				cout << " In Game Timer: " << inGameTimer << endl;
-				cout << " Gem Count: " << gems << endl;
-				cout << " Homing Dagger Count: " << homingDaggers << endl;
-				cout << " Daggers Fired: " << daggersFired << endl;
-				cout << " Daggers Hit: " << daggersHit << endl;
-				if (daggersFired > 0.0)
-					cout << " Accuracy: " << setprecision(4) << ((float) daggersHit / (float) daggersFired) * 100.0 << "%" << endl;
+			if (updateOnNextRun || clock() - timeSinceLastUpdate > 100) {
+				clear();
+				coln = 12;
+
+				printTitle(stdscr);
+
+				if (future_motd_response.valid()) {
+					if (future_motd_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+						auto r = future_motd_response.get();
+						if (r.status_code >= 400 || r.status_code == 0) {
+							motd = "Error [" + to_string(r.status_code) + "] connecting to ddstats.com.";
+						} else {
+							motd = json::parse(r.text).at("motd").get<std::string>();
+						}
+					}
+				}
+				mvprintw(coln, leftAlign, "%s", motd.c_str());
+				coln += 2;
+				if (isGameAvail)
+					attron(COLOR_PAIR(2));
 				else
-					cout << " Accuracy: 0%" << endl;
-				cout << " Enemies Alive: " << enemiesAlive << endl;
-				cout << " Enemies Killed: " << enemiesKilled << endl;
+					attron(COLOR_PAIR(1));
+				mvprintw(coln, leftAlign, "Game Status: %s", gameStatus.c_str());
+				if (isGameAvail)
+					attroff(COLOR_PAIR(2));
+				else
+					attroff(COLOR_PAIR(1));
+				coln++;
+				mvprintw(coln, leftAlign, "In Game Timer: %.4fs", inGameTimer);
+				coln++;
+				mvprintw(coln, leftAlign, "Gems: %d", gems);
+				coln++;
+				mvprintw(coln, leftAlign, "Homing Daggers: %d", homingDaggers);
+				coln++;
+				mvprintw(coln, leftAlign, "Daggers Hit: %d", daggersHit);
+				coln++;
+				mvprintw(coln, leftAlign, "Daggers Fired: %d", daggersFired);
+				coln++;
+				if (daggersFired > 0.0)
+					mvprintw(coln, leftAlign, "Accuracy: %.2f%%", ((float) daggersHit / (float) daggersFired) * 100.0);
+				else
+					mvprintw(coln, leftAlign, "Accuracy: 0%%", daggersFired);
+				coln++;
+				mvprintw(coln, leftAlign, "Enemies Alive: %d", enemiesAlive);
+				coln++;
+				mvprintw(coln, leftAlign, "Enemies Killed: %d", enemiesKilled);
+				coln++;
 				if (future_response.valid()) {
 					if (future_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
 						auto r = future_response.get();
 						if (r.status_code >= 400 || r.status_code == 0) {
-							errorLine = " Error [" + to_string(r.status_code) + "] submitting run.";
+							errorLine = "Error [" + to_string(r.status_code) + "] submitting run.";
 							jsonResponse = json();
 						} else {
 							jsonResponse = json::parse(r.text);
@@ -164,21 +239,80 @@ int main() {
 						future_response = future<cpr::Response>{};
 					}
 				}
-				cout << " Submissions: " << submitCounter << endl;
+				coln++;
+				mvprintw(coln, leftAlign, "Submissions:");
+				coln++;
 				if (errorLine != "") {
-					std::cout << std::endl << errorLine << std::endl;
+					mvprintw(coln, leftAlign, "%s", errorLine.c_str());
 				}
 				if (!jsonResponse.empty()) {
-					std::cout << std::endl << " Game submitted successfully in " << elapsed << " seconds!" << std::endl;
-					std::cout << " You can access your game at:" << std::endl;
-					std::cout << " https://ddstats.com/api/game/" <<
-						jsonResponse.at("game_id").get<std::int32_t>() << std::endl;
+					mvprintw(coln, leftAlign, "Game submitted successfully in %.2f seconds!", elapsed);
+					coln++;
+					mvprintw(coln, leftAlign, "You can access your game at: https://ddstats.com/game_log/%d", jsonResponse.at("game_id").get<std::int32_t>());
+					coln++;
+				} else {
+					mvprintw(coln, leftAlign, "None, yet.");
+					coln++;
 				}
-				cout << endl << " [F10] Exit" << endl;
+				coln++;
+				mvprintw(coln, leftAlign, "[F10] Exit");
+
+				refresh();
+
 				updateOnNextRun = false;
 				timeSinceLastUpdate = clock();
-
 			}
+
+			//if (updateOnNextRun || clock() - timeSinceLastUpdate > 5000) {
+			//	system("cls");
+			//	//cout << "------------------------------------------------------" << endl;
+			//	//cout << "                      ddstats" << endl;
+			//	printTitle();
+			//	//cout << "------------------------------------------------------" << endl << endl;
+			//	cout << " Game Status: " << gameStatus << endl << endl;
+			//	cout << " In Game Timer: " << inGameTimer << endl;
+			//	cout << " Gem Count: " << gems << endl;
+			//	cout << " Homing Dagger Count: " << homingDaggers << endl;
+			//	cout << " Daggers Fired: " << daggersFired << endl;
+			//	cout << " Daggers Hit: " << daggersHit << endl;
+			//	if (daggersFired > 0.0)
+			//		cout << " Accuracy: " << setprecision(4) << ((float) daggersHit / (float) daggersFired) * 100.0 << "%" << endl;
+			//	else
+			//		cout << " Accuracy: 0%" << endl;
+			//	cout << " Enemies Alive: " << enemiesAlive << endl;
+			//	cout << " Enemies Killed: " << enemiesKilled << endl;
+			//	if (future_response.valid()) {
+			//		if (future_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+			//			auto r = future_response.get();
+			//			if (r.status_code >= 400 || r.status_code == 0) {
+			//				errorLine = " Error [" + to_string(r.status_code) + "] submitting run.";
+			//				jsonResponse = json();
+			//			} else {
+			//				jsonResponse = json::parse(r.text);
+			//				elapsed = r.elapsed;
+			//				errorLine = "";
+			//				submitCounter++;
+			//			}
+			//			future_response = future<cpr::Response>{};
+			//		}
+			//	}
+			//	cout << " Submissions: " << submitCounter << endl;
+			//	if (errorLine != "") {
+			//		std::cout << std::endl << errorLine << std::endl;
+			//	}
+			//	if (!jsonResponse.empty()) {
+			//		std::cout << std::endl << " Game submitted successfully in " << elapsed << " seconds!" << std::endl;
+			//		std::cout << " You can access your game at:" << std::endl;
+			//		std::cout << " https://ddstats.com/api/game/" <<
+			//			jsonResponse.at("game_id").get<std::int32_t>() << std::endl;
+			//	}
+			//	cout << endl << " [F10] Exit" << endl;
+			//	updateOnNextRun = false;
+			//	timeSinceLastUpdate = clock();
+
+			//}
+
+
 
 			if (isGameAvail) {
 				//writeToMemory(hProcHandle);
@@ -217,6 +351,7 @@ int main() {
 		Sleep(15); // cut back on some(?) overhead
 	}
 
+	endwin();
 	return ERROR_SUCCESS;
 }
 
@@ -470,18 +605,34 @@ std::future<cpr::Response> sendToServer() {
 
 }
 
-void printTitle() {
+std::future<cpr::Response> getMOTD() {
+	auto future_response = cpr::PostCallback([](cpr::Response r) {
+		return r;
+	},
+		cpr::Url{ "http://ddstats.com/api/submit_game" },
+		cpr::Body{ "{ \"version\": \"" + version + "\" }" },
+		cpr::Header{ { "Content-Type", "application/json" } });
+	return future_response;
+}
 
-	std::cout << std::endl;
-	std::cout << "  @@@@@@@   @@@@@@@    @@@@@@   @@@@@@@   @@@@@@   @@@@@@@   @@@@@@" << std::endl;
-	std::cout << "  @@@@@@@@  @@@@@@@@  @@@@@@@   @@@@@@@  @@@@@@@@  @@@@@@@  @@@@@@@" << std::endl;
-	std::cout << "  @@!  @@@  @@!  @@@  !@@         @@!    @@!  @@@    @@!    !@@" << std::endl;
-	std::cout << "  !@!  @!@  !@!  @!@  !@!         !@!    !@!  @!@    !@!    !@!" << std::endl;
-	std::cout << "  @!@  !@!  @!@  !@!  !!@@!!      @!!    @!@!@!@!    @!!    !!@@!!" << std::endl;
-	std::cout << "  !@!  !!!  !@!  !!!   !!@!!!     !!!    !!!@!!!!    !!!     !!@!!!" << std::endl;
-	std::cout << "  !!:  !!!  !!:  !!!       !:!    !!:    !!:  !!!    !!:         !:!" << std::endl;
-	std::cout << "  :!:  !:!  :!:  !:!      !:!     :!:    :!:  !:!    :!:        !:!" << std::endl;
-	std::cout << "   :::: ::   :::: ::  :::: ::      ::    ::   :::     ::    :::: ::" << std::endl;
-	std::cout << "  :: :  :   :: :  :   :: : :       :      :   : :     :     :: : :" << std::endl << std::endl;
+void printTitle(WINDOW *win) {
+
+	int row, col;
+
+	getmaxyx(win, row, col);
+
+	// length = 66
+	attron(COLOR_PAIR(1));
+	mvprintw(1, (col - 66) / 2, "@@@@@@@   @@@@@@@    @@@@@@   @@@@@@@   @@@@@@   @@@@@@@   @@@@@@ ");
+	mvprintw(2, (col - 66) / 2, "@@@@@@@@  @@@@@@@@  @@@@@@@   @@@@@@@  @@@@@@@@  @@@@@@@  @@@@@@@ ");
+	mvprintw(3, (col - 66) / 2, "@@!  @@@  @@!  @@@  !@@         @@!    @@!  @@@    @@!    !@@     ");
+	mvprintw(4, (col - 66) / 2, "!@!  @!@  !@!  @!@  !@!         !@!    !@!  @!@    !@!    !@!     ");
+	mvprintw(5, (col - 66) / 2, "@!@  !@!  @!@  !@!  !!@@!!      @!!    @!@!@!@!    @!!    !!@@!!  ");
+	mvprintw(6, (col - 66) / 2, "!@!  !!!  !@!  !!!   !!@!!!     !!!    !!!@!!!!    !!!     !!@!!! ");
+	mvprintw(7, (col - 66) / 2, "!!:  !!!  !!:  !!!       !:!    !!:    !!:  !!!    !!:         !:!");
+	mvprintw(8, (col - 66) / 2, ":!:  !:!  :!:  !:!      !:!     :!:    :!:  !:!    :!:        !:! ");
+	mvprintw(9, (col - 66) / 2, " :::: ::   :::: ::  :::: ::      ::    ::   :::     ::    :::: :: ");
+	mvprintw(10, (col - 66) / 2, ":: :  :   :: :  :   :: : :       :      :   : :     :     :: : :  \n\n");
+	attroff(COLOR_PAIR(1));
 
 }
