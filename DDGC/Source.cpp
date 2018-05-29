@@ -10,13 +10,14 @@
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
 #include <curses.h>
-#include <panel.h>
 
 using namespace std;
 using json = nlohmann::json;
 
 // current version
-std::string version = "0.1.9";
+std::string version = "0.1.10";
+bool updateAvailable = false;
+bool validVersion = true;
 
 // interval in seconds for how often variables are recorded
 int interval = 1;
@@ -27,7 +28,7 @@ uintptr_t GetModuleBaseAddress(DWORD dwProcID, TCHAR *szModuleName);
 void collectGameVars(HANDLE hProcHandle);
 void commitVectors();
 void resetVectors();
-void writeLogFile();
+// void writeLogFile();
 future<cpr::Response> sendToServer();
 future<cpr::Response> getMOTD();
 void printTitle(WINDOW *win);
@@ -50,6 +51,8 @@ future<cpr::Response> future_response = future<cpr::Response>{};
 future<cpr::Response> future_motd_response = future<cpr::Response>{};
 double elapsed;
 string errorLine = "";
+std::string lastGameSubmission;
+std::string recordingStatus;
 json jsonResponse;
 
 // GAME VARS
@@ -115,6 +118,8 @@ int main() {
 
 	int coln = 12;
 	int leftAlign = (col - 66) / 2;
+	int rightAlign = leftAlign + 66;
+	int centerAlign = col / 2;
 
 	// color setup
 	//init_pair(1, 53, -1);
@@ -154,7 +159,7 @@ int main() {
 	future_motd_response = getMOTD();
 
 	while (!GetAsyncKeyState(VK_F10)) {
-		if (clock() - gameAvailTimer > 100) {
+		if ((clock() - gameAvailTimer > 100) && validVersion) {
 			gameAvailTimer = clock();
 			isGameAvail = false;
 
@@ -166,7 +171,7 @@ int main() {
 					if (hProcHandle == INVALID_HANDLE_VALUE || hProcHandle == NULL) {
 						gameStatus = "Failed to open process with valid handle.";
 					} else {
-						gameStatus = "Connected to Devil Daggers";
+						gameStatus = "[[ Connected to Devil Daggers ]]";
 						exeBaseAddress = GetModuleBaseAddress(dwProcID, (_TCHAR*)_T("dd.exe"));
 						isGameAvail = true;
 					}
@@ -174,10 +179,10 @@ int main() {
 					gameStatus = "Failed to get process ID.";
 				}
 			} else {
-				gameStatus = "Devil Daggers not found.";
+				gameStatus = "[[ Devil Daggers not found ]]";
 			}
 
-			if (updateOnNextRun || clock() - timeSinceLastUpdate > 100) {
+			if (updateOnNextRun || clock() - timeSinceLastUpdate > 500) {
 				clear();
 				coln = 12;
 
@@ -190,40 +195,71 @@ int main() {
 							motd = "Error [" + to_string(r.status_code) + "] connecting to ddstats.com.";
 						} else {
 							motd = json::parse(r.text).at("motd").get<std::string>();
+							validVersion = json::parse(r.text).at("valid_version").get<bool>();
+							updateAvailable = json::parse(r.text).at("update_available").get<bool>();
 						}
 					}
 				}
-				mvprintw(coln, leftAlign, "%s", motd.c_str());
-				coln += 2;
+				if (updateAvailable) {
+					attron(COLOR_PAIR(2));
+					mvprintw(coln-1, leftAlign, "(UPDATE AVAILABLE)");
+					attroff(COLOR_PAIR(2));
+				}
+				mvprintw(coln, (col - motd.length()) / 2, "%s", motd.c_str());
+				coln++;
 				if (isGameAvail)
 					attron(COLOR_PAIR(2));
 				else
 					attron(COLOR_PAIR(1));
-				mvprintw(coln, leftAlign, "Game Status: %s", gameStatus.c_str());
+				mvprintw(coln, (col - gameStatus.length()) / 2, gameStatus.c_str());
 				if (isGameAvail)
 					attroff(COLOR_PAIR(2));
 				else
 					attroff(COLOR_PAIR(1));
 				coln++;
+				if (recording && (inGameTimer != 0.0)) {
+					attron(COLOR_PAIR(2));
+					attron(A_BOLD);
+					recordingStatus = " [[ Recording ]] ";
+				} else {
+					attron(COLOR_PAIR(1));
+					recordingStatus = "[[ Not Recording ]]";
+				}
+				mvprintw(coln, (col - recordingStatus.length()) / 2, recordingStatus.c_str());
+				if (recording && (inGameTimer != 0.0)) {
+					attroff(COLOR_PAIR(2));
+					attroff(A_BOLD);
+				} else
+					attroff(COLOR_PAIR(1));
+				coln++;
+
+				// left column
 				mvprintw(coln, leftAlign, "In Game Timer: %.4fs", inGameTimer);
-				coln++;
-				mvprintw(coln, leftAlign, "Gems: %d", gems);
-				coln++;
-				mvprintw(coln, leftAlign, "Homing Daggers: %d", homingDaggers);
 				coln++;
 				mvprintw(coln, leftAlign, "Daggers Hit: %d", daggersHit);
 				coln++;
 				mvprintw(coln, leftAlign, "Daggers Fired: %d", daggersFired);
 				coln++;
 				if (daggersFired > 0.0)
-					mvprintw(coln, leftAlign, "Accuracy: %.2f%%", ((float) daggersHit / (float) daggersFired) * 100.0);
+					mvprintw(coln, leftAlign, "Accuracy: %.2f%%", ((float)daggersHit / (float)daggersFired) * 100.0);
 				else
-					mvprintw(coln, leftAlign, "Accuracy: 0%%", daggersFired);
+					mvprintw(coln, leftAlign, "Accuracy: 0.00%%", daggersFired);
+
+				// right column
+				coln -= 3;
+				mvprintw(coln, rightAlign-(6+to_string(gems).length()), "Gems: %d", gems);
 				coln++;
-				mvprintw(coln, leftAlign, "Enemies Alive: %d", enemiesAlive);
+				mvprintw(coln, rightAlign-(16+to_string(homingDaggers).length()), "Homing Daggers: %d", homingDaggers);
 				coln++;
-				mvprintw(coln, leftAlign, "Enemies Killed: %d", enemiesKilled);
+				// fix for title screen
+				if (inGameTimer == 0.0)
+					mvprintw(coln, rightAlign - 16, "Enemies Alive: %d", 0);
+				else
+					mvprintw(coln, rightAlign - (15 + to_string(enemiesAlive).length()), "Enemies Alive: %d", enemiesAlive);
 				coln++;
+				mvprintw(coln, rightAlign-(16+to_string(enemiesKilled).length()), "Enemies Killed: %d", enemiesKilled);
+				coln++;
+
 				if (future_response.valid()) {
 					if (future_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
 						auto r = future_response.get();
@@ -240,19 +276,17 @@ int main() {
 					}
 				}
 				coln++;
-				mvprintw(coln, leftAlign, "Submissions:");
-				coln++;
+				mvprintw(coln, leftAlign, "Last Submission:");
 				if (errorLine != "") {
-					mvprintw(coln, leftAlign, "%s", errorLine.c_str());
-				}
-				if (!jsonResponse.empty()) {
-					mvprintw(coln, leftAlign, "Game submitted successfully in %.2f seconds!", elapsed);
-					coln++;
-					mvprintw(coln, leftAlign, "You can access your game at: https://ddstats.com/game_log/%d", jsonResponse.at("game_id").get<std::int32_t>());
-					coln++;
+					attron(COLOR_PAIR(1));
+					mvprintw(coln, leftAlign + 17, errorLine.c_str());
+					attroff(COLOR_PAIR(1));
+				} else if (!jsonResponse.empty()) {
+					attron(COLOR_PAIR(2));
+					mvprintw(coln, leftAlign + 17, "https://ddstats.com/game_log/%s", to_string(jsonResponse.at("game_id").get<std::int32_t>()).c_str());
+					attroff(COLOR_PAIR(2));
 				} else {
-					mvprintw(coln, leftAlign, "None, yet.");
-					coln++;
+					mvprintw(coln, leftAlign + 17, "None, yet.");
 				}
 				coln++;
 				mvprintw(coln, leftAlign, "[F10] Exit");
@@ -347,6 +381,15 @@ int main() {
 			//		}
 			//	}
 			//}
+		}
+		if (!validVersion) {	
+			clear();
+			mvprintw(0, leftAlign, "This version of ddstats.exe is no longer valid.");
+			mvprintw(1, leftAlign, "Press any key to exit.");
+			refresh();
+			getch();
+			endwin();
+			return ERROR;
 		}
 		Sleep(15); // cut back on some(?) overhead
 	}
@@ -500,48 +543,48 @@ uintptr_t GetModuleBaseAddress(DWORD dwProcID, TCHAR *szModuleName) {
 	return ModuleBaseAddress;
 }
 
-void writeLogFile() {
-	DWORD pointer;
-	DWORD pTemp;
-	DWORD pointerAddr;
-
-	// get playerID
-	pointer = exeBaseAddress + playerIDBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for playerID." << endl;
-	}
-	else {
-		pointerAddr = pTemp + playerIDOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerID, sizeof(playerID), NULL);
-	}
-	//float accuracy;
-	//if (daggersFired > 0.0)
-	//	accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
-	//else
-	//	accuracy = 0.0;
-	json log = {
-		{"playerID", playerID},
-		{"granularity", interval},
-		{"inGameTimer", inGameTimer},
-		{"inGameTimerVector", inGameTimerVector},
-		{"gems", gems},
-		{"gemsVector", gemsVector},
-		{"homingDaggers", homingDaggers},
-		{"homingDaggersVector", homingDaggersVector},
-		{"daggersFired", daggersFired},
-		{"daggersFiredVector", daggersFiredVector},
-		{"daggersHit", daggersHit},
-		{"daggersHitVector", daggersHitVector},
-		// {"accuracy", accuracy},
-		{"enemiesAlive", enemiesAlive},
-		{"enemiesAliveVector", enemiesAliveVector},
-		{"enemiesKilled", enemiesKilled},
-		{"enemiesKilledVector", enemiesKilledVector},
-		{"deathType", deathType}
-	};
-	ofstream o(to_string(clock()) + ".json");
-	o << setw(4) << setprecision(4) << log << endl;
-}
+//void writeLogFile() {
+//	DWORD pointer;
+//	DWORD pTemp;
+//	DWORD pointerAddr;
+//
+//	// get playerID
+//	pointer = exeBaseAddress + playerIDBaseAddress;
+//	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+//		cout << " Failed to read address for playerID." << endl;
+//	}
+//	else {
+//		pointerAddr = pTemp + playerIDOffset;
+//		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerID, sizeof(playerID), NULL);
+//	}
+//	//float accuracy;
+//	//if (daggersFired > 0.0)
+//	//	accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
+//	//else
+//	//	accuracy = 0.0;
+//	json log = {
+//		{"playerID", playerID},
+//		{"granularity", interval},
+//		{"inGameTimer", inGameTimer},
+//		{"inGameTimerVector", inGameTimerVector},
+//		{"gems", gems},
+//		{"gemsVector", gemsVector},
+//		{"homingDaggers", homingDaggers},
+//		{"homingDaggersVector", homingDaggersVector},
+//		{"daggersFired", daggersFired},
+//		{"daggersFiredVector", daggersFiredVector},
+//		{"daggersHit", daggersHit},
+//		{"daggersHitVector", daggersHitVector},
+//		// {"accuracy", accuracy},
+//		{"enemiesAlive", enemiesAlive},
+//		{"enemiesAliveVector", enemiesAliveVector},
+//		{"enemiesKilled", enemiesKilled},
+//		{"enemiesKilledVector", enemiesKilledVector},
+//		{"deathType", deathType}
+//	};
+//	ofstream o(to_string(clock()) + ".json");
+//	o << setw(4) << setprecision(4) << log << endl;
+//}
 
 std::future<cpr::Response> sendToServer() {
 	DWORD pointer;
@@ -562,10 +605,19 @@ std::future<cpr::Response> sendToServer() {
 	//	accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
 	//else
 	//	accuracy = 0.0;
+
+	// this fixes the last captured time if user restarts to be accurate
+	float inGameTimerFix;
+	if (deathType == -1) {
+		inGameTimerFix = oldInGameTimer;
+	} else {
+		inGameTimerFix = inGameTimer;
+	}
+
 	json log = {
 		{ "playerID", playerID },
 		{ "granularity", interval },
-		{ "inGameTimer", inGameTimer },
+		{ "inGameTimer", inGameTimerFix },
 		{ "inGameTimerVector", inGameTimerVector },
 		{ "gems", gems },
 		{ "gemsVector", gemsVector },
@@ -609,7 +661,7 @@ std::future<cpr::Response> getMOTD() {
 	auto future_response = cpr::PostCallback([](cpr::Response r) {
 		return r;
 	},
-		cpr::Url{ "http://ddstats.com/api/submit_game" },
+		cpr::Url{ "http://ddstats.com/api/get_motd" },
 		cpr::Body{ "{ \"version\": \"" + version + "\" }" },
 		cpr::Header{ { "Content-Type", "application/json" } });
 	return future_response;
@@ -632,7 +684,8 @@ void printTitle(WINDOW *win) {
 	mvprintw(7, (col - 66) / 2, "!!:  !!!  !!:  !!!       !:!    !!:    !!:  !!!    !!:         !:!");
 	mvprintw(8, (col - 66) / 2, ":!:  !:!  :!:  !:!      !:!     :!:    :!:  !:!    :!:        !:! ");
 	mvprintw(9, (col - 66) / 2, " :::: ::   :::: ::  :::: ::      ::    ::   :::     ::    :::: :: ");
-	mvprintw(10, (col - 66) / 2, ":: :  :   :: :  :   :: : :       :      :   : :     :     :: : :  \n\n");
+	mvprintw(10, (col - 66) / 2, ":: :  :   :: :  :   :: : :       :      :   : :     :     :: : : ");
+	mvprintw(11, ((col - 66) / 2) + (66 - version.length()-2), "v%s", version.c_str());
 	attroff(COLOR_PAIR(1));
 
 }
