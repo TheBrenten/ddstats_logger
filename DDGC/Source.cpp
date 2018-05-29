@@ -15,7 +15,7 @@ using namespace std;
 using json = nlohmann::json;
 
 // current version
-std::string version = "0.1.10";
+std::string version = "0.2.0";
 bool updateAvailable = false;
 bool validVersion = true;
 
@@ -32,6 +32,19 @@ void resetVectors();
 future<cpr::Response> sendToServer();
 future<cpr::Response> getMOTD();
 void printTitle(WINDOW *win);
+void printStats();
+
+float inGameTimerSubmit = 0.0;
+int gemsSubmit = 0;
+int homingDaggersSubmit = 0;
+int daggersFiredSubmit = 0;
+int daggersHitSubmit = 0;
+int enemiesAliveSubmit = 0;
+int enemiesKilledSubmit = 0;
+float accuracySubmit = 0.0;
+
+int coln;
+int leftAlign, rightAlign, centerAlign;
 
 string gameName = "Devil Daggers";
 LPCSTR gameWindow = "Devil Daggers";
@@ -41,6 +54,7 @@ uintptr_t exeBaseAddress = 0;
 bool isGameAvail;
 bool updateOnNextRun;
 bool recording = false;
+bool monitorStats = false;
 
 int recordingCounter = 0;
 std::string motd = "";
@@ -116,10 +130,10 @@ int main() {
 	int row, col;
 	getmaxyx(stdscr, row, col);
 
-	int coln = 12;
-	int leftAlign = (col - 66) / 2;
-	int rightAlign = leftAlign + 66;
-	int centerAlign = col / 2;
+	coln = 12;
+	leftAlign = (col - 66) / 2;
+	rightAlign = leftAlign + 66;
+	centerAlign = col / 2;
 
 	// color setup
 	//init_pair(1, 53, -1);
@@ -233,32 +247,39 @@ int main() {
 					attroff(COLOR_PAIR(1));
 				coln++;
 
-				// left column
-				mvprintw(coln, leftAlign, "In Game Timer: %.4fs", inGameTimer);
-				coln++;
-				mvprintw(coln, leftAlign, "Daggers Hit: %d", daggersHit);
-				coln++;
-				mvprintw(coln, leftAlign, "Daggers Fired: %d", daggersFired);
-				coln++;
-				if (daggersFired > 0.0)
-					mvprintw(coln, leftAlign, "Accuracy: %.2f%%", ((float)daggersHit / (float)daggersFired) * 100.0);
-				else
-					mvprintw(coln, leftAlign, "Accuracy: 0.00%%", daggersFired);
+				if (monitorStats) {
+					// left column
+					mvprintw(coln, leftAlign, "In Game Timer: %.4fs", inGameTimer);
+					coln++;
+					mvprintw(coln, leftAlign, "Daggers Hit: %d", daggersHit);
+					coln++;
+					mvprintw(coln, leftAlign, "Daggers Fired: %d", daggersFired);
+					coln++;
+					if (daggersFired > 0.0)
+						mvprintw(coln, leftAlign, "Accuracy: %.2f%%", ((float)daggersHit / (float)daggersFired) * 100.0);
+					else
+						mvprintw(coln, leftAlign, "Accuracy: 0.00%%", daggersFired);
 
-				// right column
-				coln -= 3;
-				mvprintw(coln, rightAlign-(6+to_string(gems).length()), "Gems: %d", gems);
-				coln++;
-				mvprintw(coln, rightAlign-(16+to_string(homingDaggers).length()), "Homing Daggers: %d", homingDaggers);
-				coln++;
-				// fix for title screen
-				if (inGameTimer == 0.0)
-					mvprintw(coln, rightAlign - 16, "Enemies Alive: %d", 0);
-				else
-					mvprintw(coln, rightAlign - (15 + to_string(enemiesAlive).length()), "Enemies Alive: %d", enemiesAlive);
-				coln++;
-				mvprintw(coln, rightAlign-(16+to_string(enemiesKilled).length()), "Enemies Killed: %d", enemiesKilled);
-				coln++;
+					// right column
+					coln -= 3;
+					mvprintw(coln, rightAlign-(6+to_string(gems).length()), "Gems: %d", gems);
+					coln++;
+					mvprintw(coln, rightAlign-(16+to_string(homingDaggers).length()), "Homing Daggers: %d", homingDaggers);
+					coln++;
+					// fix for title screen
+					if (inGameTimer == 0.0)
+						mvprintw(coln, rightAlign - 16, "Enemies Alive: %d", 0);
+					else
+						mvprintw(coln, rightAlign - (15 + to_string(enemiesAlive).length()), "Enemies Alive: %d", enemiesAlive);
+					coln++;
+					if (inGameTimer = 0.0)
+						mvprintw(coln, rightAlign - 17, "Enemies Killed: %d", 0);
+					else
+						mvprintw(coln, rightAlign-(16+to_string(enemiesKilled).length()), "Enemies Killed: %d", enemiesKilled);
+					coln++;
+				} else {
+					printStats();
+				}
 
 				if (future_response.valid()) {
 					if (future_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -370,17 +391,15 @@ int main() {
 
 			}
 
-			//if (clock() - onePressTimer > 400) {
-			//	if (isGameAvail) {
-			//		if (GetAsyncKeyState(VK_F1)) {
-			//			onePressTimer = clock();
-			//			gemStatus = !gemStatus;
-			//			updateOnNextRun = true;
-			//			if (gemStatus) sGemStatus = "ON";
-			//			else sGemStatus = "OFF";
-			//		}
-			//	}
-			//}
+			if (clock() - onePressTimer > 400) {
+				if (isGameAvail) {
+					if (GetAsyncKeyState(VK_F11)) {
+						onePressTimer = clock();
+						monitorStats = !monitorStats;
+						updateOnNextRun = true;
+					}
+				}
+			}
 		}
 		if (!validVersion) {	
 			clear();
@@ -396,6 +415,30 @@ int main() {
 
 	endwin();
 	return ERROR_SUCCESS;
+}
+
+void printStats() {
+
+	// left column
+	mvprintw(coln, leftAlign, "In Game Timer: %.4fs", inGameTimerSubmit);
+	coln++;
+	mvprintw(coln, leftAlign, "Daggers Hit: %d", daggersHitSubmit);
+	coln++;
+	mvprintw(coln, leftAlign, "Daggers Fired: %d", daggersFiredSubmit);
+	coln++;
+	mvprintw(coln, leftAlign, "Accuracy: %.2f%%", accuracySubmit);
+
+	// right column
+	coln -= 3;
+	mvprintw(coln, rightAlign - (6 + to_string(gemsSubmit).length()), "Gems: %d", gemsSubmit);
+	coln++;
+	mvprintw(coln, rightAlign - (16 + to_string(homingDaggersSubmit).length()), "Homing Daggers: %d", homingDaggersSubmit);
+	coln++;
+	mvprintw(coln, rightAlign - (15 + to_string(enemiesAliveSubmit).length()), "Enemies Alive: %d", enemiesAliveSubmit);
+	coln++;
+	mvprintw(coln, rightAlign - (16 + to_string(enemiesKilledSubmit).length()), "Enemies Killed: %d", enemiesKilledSubmit);
+	coln++;
+
 }
 
 void commitVectors() {
@@ -634,6 +677,19 @@ std::future<cpr::Response> sendToServer() {
 		{ "enemiesKilledVector", enemiesKilledVector },
 		{ "deathType", deathType }
 	};
+
+	inGameTimerSubmit = inGameTimerFix;
+	gemsSubmit = gems;
+	homingDaggersSubmit = homingDaggers;
+	daggersFiredSubmit = daggersFired;
+	daggersHitSubmit = daggersHit;
+	enemiesAliveSubmit = enemiesAlive;
+	enemiesKilledSubmit = enemiesKilled;
+	if (daggersFired == 0)
+		accuracySubmit = 0.0;
+	else
+		accuracySubmit = (daggersHit / daggersFired) * 100.0;
+
 	// auto r = cpr::PostAsync(cpr::Url{ "http://www.ddstats.com/api/submit_game" },
 	//auto r = cpr::PostAsync(cpr::Url{ "http://10.0.1.222:5666/submit_game" },
 					  // cpr::Body{ log.dump() },
