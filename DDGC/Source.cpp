@@ -33,6 +33,7 @@ future<cpr::Response> sendToServer();
 future<cpr::Response> getMOTD();
 void printTitle(WINDOW *win);
 void printStats();
+int getReplayPlayerID(HANDLE process);
 
 float inGameTimerSubmit = 0.0;
 int gemsSubmit = 0;
@@ -55,6 +56,7 @@ bool isGameAvail;
 bool updateOnNextRun;
 bool recording = false;
 bool monitorStats = false;
+bool replayEnabled = false;
 
 int recordingCounter = 0;
 std::string motd = "";
@@ -111,6 +113,7 @@ DWORD aliveOffset = 0x1A4;
 bool isReplay;
 DWORD isReplayBaseAddress = 0x001F30C0;
 DWORD isReplayOffset = 0x35D;
+int replayPlayerID;
 
 // GEM VARS
 bool gemStatus = false;
@@ -139,6 +142,8 @@ int main() {
 	//init_pair(1, 53, -1);
 	init_pair(1, COLOR_RED, COLOR_BLACK);
 	init_pair(2, COLOR_GREEN, COLOR_BLACK);
+	init_pair(3, COLOR_MAGENTA, COLOR_BLACK);
+	init_pair(4, COLOR_YELLOW, COLOR_BLACK);
 
 	//printw("Type any character to see it in bold\n");
 	//ch = getch();
@@ -181,7 +186,7 @@ int main() {
 			if (hGameWindow) {
 				GetWindowThreadProcessId(hGameWindow, &dwProcID);
 				if (dwProcID) {
-					hProcHandle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, dwProcID);
+					hProcHandle = OpenProcess(PROCESS_ALL_ACCESS | PROCESS_QUERY_INFORMATION, FALSE, dwProcID);
 					if (hProcHandle == INVALID_HANDLE_VALUE || hProcHandle == NULL) {
 						gameStatus = "Failed to open process with valid handle.";
 					} else {
@@ -207,7 +212,8 @@ int main() {
 						auto r = future_motd_response.get();
 						if (r.status_code >= 400 || r.status_code == 0) {
 							motd = "Error [" + to_string(r.status_code) + "] connecting to ddstats.com.";
-						} else {
+						}
+						else {
 							motd = json::parse(r.text).at("motd").get<std::string>();
 							validVersion = json::parse(r.text).at("valid_version").get<bool>();
 							updateAvailable = json::parse(r.text).at("update_available").get<bool>();
@@ -216,7 +222,7 @@ int main() {
 				}
 				if (updateAvailable) {
 					attron(COLOR_PAIR(2));
-					mvprintw(coln-1, leftAlign, "(UPDATE AVAILABLE)");
+					mvprintw(coln - 1, leftAlign, "(UPDATE AVAILABLE)");
 					attroff(COLOR_PAIR(2));
 				}
 				mvprintw(coln, (col - motd.length()) / 2, "%s", motd.c_str());
@@ -234,8 +240,12 @@ int main() {
 				if (recording && (inGameTimer != 0.0)) {
 					attron(COLOR_PAIR(2));
 					attron(A_BOLD);
-					recordingStatus = " [[ Recording ]] ";
-				} else {
+					if (isReplay && replayEnabled)
+						recordingStatus = " [[ Recording Replay ]] ";
+					else
+						recordingStatus = " [[ Recording ]] ";
+				}
+				else {
 					attron(COLOR_PAIR(1));
 					recordingStatus = "[[ Not Recording ]]";
 				}
@@ -243,7 +253,8 @@ int main() {
 				if (recording && (inGameTimer != 0.0)) {
 					attroff(COLOR_PAIR(2));
 					attroff(A_BOLD);
-				} else
+				}
+				else
 					attroff(COLOR_PAIR(1));
 				coln++;
 
@@ -262,9 +273,9 @@ int main() {
 
 					// right column
 					coln -= 3;
-					mvprintw(coln, rightAlign-(6+to_string(gems).length()), "Gems: %d", gems);
+					mvprintw(coln, rightAlign - (6 + to_string(gems).length()), "Gems: %d", gems);
 					coln++;
-					mvprintw(coln, rightAlign-(16+to_string(homingDaggers).length()), "Homing Daggers: %d", homingDaggers);
+					mvprintw(coln, rightAlign - (16 + to_string(homingDaggers).length()), "Homing Daggers: %d", homingDaggers);
 					coln++;
 					// fix for title screen
 					if (inGameTimer == 0.0)
@@ -275,10 +286,22 @@ int main() {
 					if (inGameTimer = 0.0)
 						mvprintw(coln, rightAlign - 17, "Enemies Killed: %d", 0);
 					else
-						mvprintw(coln, rightAlign-(16+to_string(enemiesKilled).length()), "Enemies Killed: %d", enemiesKilled);
+						mvprintw(coln, rightAlign - (16 + to_string(enemiesKilled).length()), "Enemies Killed: %d", enemiesKilled);
 					coln++;
-				} else {
+				}
+				else {
 					printStats();
+				}
+
+				if (monitorStats) {
+					attron(COLOR_PAIR(3));
+					mvprintw(0, leftAlign, "+s");
+					attroff(COLOR_PAIR(3));
+				}
+				if (replayEnabled) {
+					attron(COLOR_PAIR(4));
+					mvprintw(0, leftAlign + 2, "+r");
+					attroff(COLOR_PAIR(4));
 				}
 
 				if (future_response.valid()) {
@@ -372,10 +395,12 @@ int main() {
 			if (isGameAvail) {
 				//writeToMemory(hProcHandle);
 				collectGameVars(hProcHandle);
-				if (alive && inGameTimer > 0 && !isReplay) {
-					recording = true;
-					if (recordingCounter < inGameTimer) {
-						commitVectors();
+				if (alive && inGameTimer > 0) {
+					if ((!isReplay) || (isReplay && replayEnabled)) {
+						recording = true;
+						if (recordingCounter < inGameTimer) {
+							commitVectors();
+						}
 					}
 				}
 				if (!alive && recording == true) {
@@ -398,8 +423,14 @@ int main() {
 						monitorStats = !monitorStats;
 						updateOnNextRun = true;
 					}
+					if (GetAsyncKeyState(VK_F12)) {
+						onePressTimer = clock();
+						replayEnabled = !replayEnabled;
+						updateOnNextRun = true;
+					}
 				}
 			}
+
 		}
 		if (!validVersion) {	
 			clear();
@@ -414,6 +445,7 @@ int main() {
 	}
 
 	endwin();
+	CloseHandle(hProcHandle);
 	return ERROR_SUCCESS;
 }
 
@@ -478,10 +510,12 @@ void collectGameVars(HANDLE hProcHandle) {
 		oldInGameTimer = inGameTimer;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &inGameTimer, sizeof(inGameTimer), NULL);
 		if ((inGameTimer < oldInGameTimer) && recording) {
-			// submit, but use oldInGameTimer var instead of new... then continue.
-			deathType = -1; // did not die, so no death type.
-			future_response = sendToServer();
-			resetVectors(); // reset after submit
+			if (!isReplay) {
+				// submit, but use oldInGameTimer var instead of new... then continue.
+				deathType = -1; // did not die, so no death type.
+				future_response = sendToServer();
+			}
+			resetVectors(); // reset after submit or if player restarted
 		}
 	}
 	// isReplay
@@ -657,6 +691,11 @@ std::future<cpr::Response> sendToServer() {
 		inGameTimerFix = inGameTimer;
 	}
 
+	if (isReplay && !alive)
+		replayPlayerID = getReplayPlayerID(hProcHandle);
+	else
+		replayPlayerID = -1;
+
 	json log = {
 		{ "playerID", playerID },
 		{ "granularity", interval },
@@ -675,7 +714,8 @@ std::future<cpr::Response> sendToServer() {
 		{ "enemiesAliveVector", enemiesAliveVector },
 		{ "enemiesKilled", enemiesKilled },
 		{ "enemiesKilledVector", enemiesKilledVector },
-		{ "deathType", deathType }
+		{ "deathType", deathType },
+		{ "replayPlayerID", replayPlayerID }
 	};
 
 	inGameTimerSubmit = inGameTimerFix;
@@ -744,4 +784,46 @@ void printTitle(WINDOW *win) {
 	mvprintw(11, ((col - 66) / 2) + (66 - version.length()-2), "v%s", version.c_str());
 	attroff(COLOR_PAIR(1));
 
+}
+
+int getReplayPlayerID(HANDLE process)
+{
+	if (process)
+	{
+		const char data[] = { '"', 'r', 'e', 'p', 'l', 'a', 'y', '"' };
+		size_t len = sizeof(data);
+
+		SYSTEM_INFO si;
+		GetSystemInfo(&si);
+
+		MEMORY_BASIC_INFORMATION info;
+		std::vector<char> chunk;
+		char* p = 0;
+		while (p < si.lpMaximumApplicationAddress)
+		{
+			if (VirtualQueryEx(process, p, &info, sizeof(info)) == sizeof(info))
+			{
+				p = (char*)info.BaseAddress;
+				chunk.resize(info.RegionSize);
+				SIZE_T bytesRead;
+				if (ReadProcessMemory(process, p, &chunk[0], info.RegionSize, &bytesRead))
+				{
+					for (size_t i = 0; i < (bytesRead - len); ++i)
+					{
+						if (memcmp(data, &chunk[i], len) == 0)
+						{
+							int id;
+							char value[7] = { 0 };
+							ReadProcessMemory(process, (LPVOID)(p + i + 12), &value, sizeof(value), 0);
+							value[6] = '\0';
+							sscanf_s(value, "%d", &id);
+							return id;
+						}
+					}
+				}
+				p += info.RegionSize;
+			}
+		}
+	}
+	return 0;
 }
