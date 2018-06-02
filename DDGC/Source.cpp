@@ -15,7 +15,7 @@ using namespace std;
 using json = nlohmann::json;
 
 // current version
-std::string version = "0.2.0";
+std::string version = "0.2.1";
 bool updateAvailable = false;
 bool validVersion = true;
 
@@ -34,6 +34,7 @@ future<cpr::Response> getMOTD();
 void printTitle(WINDOW *win);
 void printStats();
 int getReplayPlayerID(HANDLE process);
+bool replayUsernameMatch();
 
 float inGameTimerSubmit = 0.0;
 int gemsSubmit = 0;
@@ -426,6 +427,7 @@ int main() {
 					if (GetAsyncKeyState(VK_F12)) {
 						onePressTimer = clock();
 						replayEnabled = !replayEnabled;
+						monitorStats = replayEnabled;
 						updateOnNextRun = true;
 					}
 				}
@@ -441,7 +443,12 @@ int main() {
 			endwin();
 			return ERROR;
 		}
-		Sleep(15); // cut back on some(?) overhead
+
+		// this is to make sure all points are captured when fast-forwarding
+		if (isReplay && replayEnabled)
+			Sleep(5);
+		else
+			Sleep(15); // cut back on some(?) overhead
 	}
 
 	endwin();
@@ -691,10 +698,13 @@ std::future<cpr::Response> sendToServer() {
 		inGameTimerFix = inGameTimer;
 	}
 
-	if (isReplay && !alive)
-		replayPlayerID = getReplayPlayerID(hProcHandle);
-	else
-		replayPlayerID = -1;
+	if (isReplay && !alive) {
+		if (replayUsernameMatch())
+			replayPlayerID = playerID;
+		else
+			replayPlayerID = getReplayPlayerID(hProcHandle);
+	} else
+		replayPlayerID = 0;
 
 	json log = {
 		{ "playerID", playerID },
@@ -826,4 +836,45 @@ int getReplayPlayerID(HANDLE process)
 		}
 	}
 	return 0;
+}
+
+bool replayUsernameMatch() {
+	DWORD pointer;
+	DWORD pTemp;
+	DWORD pointerAddr;
+
+	// player name char count
+	pointer = exeBaseAddress + 0x001F30C0;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+		cout << " Failed to read address for player base." << endl;
+	}
+	else {
+		int playerNameCharCount;
+		int replayNameCharCount;
+
+		// player name char count
+		pointerAddr = pTemp + 0x70;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerNameCharCount, sizeof(playerNameCharCount), NULL);
+		// replay name char count
+		pointerAddr = pTemp + 0x370;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &replayNameCharCount, sizeof(replayNameCharCount), NULL);
+		if (playerNameCharCount != replayNameCharCount)
+			return false;
+
+		char playerName[128];
+		char replayName[128];
+
+		// player name
+		pointerAddr = pTemp + 0x60;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerName, sizeof(playerName), NULL);
+		// replay name
+		pointerAddr = pTemp + 0x360;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerName, sizeof(playerName), NULL);
+
+		if (!strncmp(playerName, replayName, playerNameCharCount))
+			return true;
+		
+	}
+
+	return false;
 }
