@@ -700,6 +700,7 @@ void printTitle() {
 
 }
 
+// this function takes forever in debug mode... don't know why..
 int getReplayPlayerID(HANDLE process)
 {
 	if (process)
@@ -780,5 +781,5 @@ bool replayUsernameMatch() {
 		}
 	}
 
-	false;
+	return false;
 }
