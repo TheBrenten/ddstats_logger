@@ -15,7 +15,7 @@ using namespace std;
 using json = nlohmann::json;
 
 // current version
-std::string version = "0.2.1";
+std::string version = "0.2.2";
 bool updateAvailable = false;
 bool validVersion = true;
 
@@ -31,10 +31,14 @@ void resetVectors();
 // void writeLogFile();
 future<cpr::Response> sendToServer();
 future<cpr::Response> getMOTD();
-void printTitle(WINDOW *win);
+void printTitle();
+void printStatus();
+void printMonitorStats();
 void printStats();
 int getReplayPlayerID(HANDLE process);
 bool replayUsernameMatch();
+void debug(std::string debugStr);
+void printDebug();
 
 float inGameTimerSubmit = 0.0;
 int gemsSubmit = 0;
@@ -45,7 +49,8 @@ int enemiesAliveSubmit = 0;
 int enemiesKilledSubmit = 0;
 float accuracySubmit = 0.0;
 
-int coln;
+int row, col;
+int rown;
 int leftAlign, rightAlign, centerAlign;
 
 string gameName = "Devil Daggers";
@@ -73,6 +78,9 @@ std::string recordingStatus;
 json jsonResponse;
 
 // GAME VARS
+DWORD playerPointer = 0x001F30C0;
+DWORD gamePointer = 0x001F8084;
+
 float oldInGameTimer;
 float inGameTimer;
 DWORD inGameTimerBaseAddress = 0x001F30C0;
@@ -116,10 +124,9 @@ DWORD isReplayBaseAddress = 0x001F30C0;
 DWORD isReplayOffset = 0x35D;
 int replayPlayerID;
 
-// GEM VARS
-bool gemStatus = false;
-float gemOnScreenValue;
+std::vector<std::string> debugVector;
 
+ 
 int main() {
 
 	// set up curses
@@ -129,43 +136,19 @@ int main() {
 	noecho();
 	start_color();
 	curs_set(0);
-	// nodelay();
 
-	int row, col;
 	getmaxyx(stdscr, row, col);
 
-	coln = 12;
+	rown = 12;
 	leftAlign = (col - 66) / 2;
 	rightAlign = leftAlign + 66;
 	centerAlign = col / 2;
 
 	// color setup
-	//init_pair(1, 53, -1);
 	init_pair(1, COLOR_RED, COLOR_BLACK);
 	init_pair(2, COLOR_GREEN, COLOR_BLACK);
 	init_pair(3, COLOR_MAGENTA, COLOR_BLACK);
 	init_pair(4, COLOR_YELLOW, COLOR_BLACK);
-
-	//printw("Type any character to see it in bold\n");
-	//ch = getch();
-	//if (ch == KEY_F(1))
-	//	printw("F1 Key pressed");
-	//else {
-	//	printw("The pressed key is ");
-	//	attron(A_BOLD);
-	//	printw("%c", ch);
-	//	attroff(A_BOLD);
-	//}
-	//refresh();
-	//getch();
-	// endwin();
-
-	// return 0;
-
-	// this sets up the colors for the console
-	//HANDLE hConsole;
-	//hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-	//SetConsoleTextAttribute(hConsole, 832);
 
 	HWND hGameWindow = NULL;
 	int timeSinceLastUpdate = clock();
@@ -174,7 +157,6 @@ int main() {
 
 	DWORD dwProcID = NULL;
 	updateOnNextRun = true;
-	// string sGemStatus = "OFF";
 
 	future_motd_response = getMOTD();
 
@@ -187,7 +169,7 @@ int main() {
 			if (hGameWindow) {
 				GetWindowThreadProcessId(hGameWindow, &dwProcID);
 				if (dwProcID) {
-					hProcHandle = OpenProcess(PROCESS_ALL_ACCESS | PROCESS_QUERY_INFORMATION, FALSE, dwProcID);
+					hProcHandle = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, dwProcID);
 					if (hProcHandle == INVALID_HANDLE_VALUE || hProcHandle == NULL) {
 						gameStatus = "Failed to open process with valid handle.";
 					} else {
@@ -204,95 +186,16 @@ int main() {
 
 			if (updateOnNextRun || clock() - timeSinceLastUpdate > 500) {
 				clear();
-				coln = 12;
+				rown = 12; // row number
 
-				printTitle(stdscr);
+				printTitle();
 
-				if (future_motd_response.valid()) {
-					if (future_motd_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-						auto r = future_motd_response.get();
-						if (r.status_code >= 400 || r.status_code == 0) {
-							motd = "Error [" + to_string(r.status_code) + "] connecting to ddstats.com.";
-						}
-						else {
-							motd = json::parse(r.text).at("motd").get<std::string>();
-							validVersion = json::parse(r.text).at("valid_version").get<bool>();
-							updateAvailable = json::parse(r.text).at("update_available").get<bool>();
-						}
-					}
-				}
-				if (updateAvailable) {
-					attron(COLOR_PAIR(2));
-					mvprintw(coln - 1, leftAlign, "(UPDATE AVAILABLE)");
-					attroff(COLOR_PAIR(2));
-				}
-				mvprintw(coln, (col - motd.length()) / 2, "%s", motd.c_str());
-				coln++;
-				if (isGameAvail)
-					attron(COLOR_PAIR(2));
+				printStatus();
+
+				if (monitorStats || isReplay)
+					printMonitorStats();
 				else
-					attron(COLOR_PAIR(1));
-				mvprintw(coln, (col - gameStatus.length()) / 2, gameStatus.c_str());
-				if (isGameAvail)
-					attroff(COLOR_PAIR(2));
-				else
-					attroff(COLOR_PAIR(1));
-				coln++;
-				if (recording && (inGameTimer != 0.0)) {
-					attron(COLOR_PAIR(2));
-					attron(A_BOLD);
-					if (isReplay && replayEnabled)
-						recordingStatus = " [[ Recording Replay ]] ";
-					else
-						recordingStatus = " [[ Recording ]] ";
-				}
-				else {
-					attron(COLOR_PAIR(1));
-					recordingStatus = "[[ Not Recording ]]";
-				}
-				mvprintw(coln, (col - recordingStatus.length()) / 2, recordingStatus.c_str());
-				if (recording && (inGameTimer != 0.0)) {
-					attroff(COLOR_PAIR(2));
-					attroff(A_BOLD);
-				}
-				else
-					attroff(COLOR_PAIR(1));
-				coln++;
-
-				if (monitorStats) {
-					// left column
-					mvprintw(coln, leftAlign, "In Game Timer: %.4fs", inGameTimer);
-					coln++;
-					mvprintw(coln, leftAlign, "Daggers Hit: %d", daggersHit);
-					coln++;
-					mvprintw(coln, leftAlign, "Daggers Fired: %d", daggersFired);
-					coln++;
-					if (daggersFired > 0.0)
-						mvprintw(coln, leftAlign, "Accuracy: %.2f%%", ((float)daggersHit / (float)daggersFired) * 100.0);
-					else
-						mvprintw(coln, leftAlign, "Accuracy: 0.00%%", daggersFired);
-
-					// right column
-					coln -= 3;
-					mvprintw(coln, rightAlign - (6 + to_string(gems).length()), "Gems: %d", gems);
-					coln++;
-					mvprintw(coln, rightAlign - (16 + to_string(homingDaggers).length()), "Homing Daggers: %d", homingDaggers);
-					coln++;
-					// fix for title screen
-					if (inGameTimer == 0.0)
-						mvprintw(coln, rightAlign - 16, "Enemies Alive: %d", 0);
-					else
-						mvprintw(coln, rightAlign - (15 + to_string(enemiesAlive).length()), "Enemies Alive: %d", enemiesAlive);
-					coln++;
-					if (inGameTimer = 0.0)
-						mvprintw(coln, rightAlign - 17, "Enemies Killed: %d", 0);
-					else
-						mvprintw(coln, rightAlign - (16 + to_string(enemiesKilled).length()), "Enemies Killed: %d", enemiesKilled);
-					coln++;
-				}
-				else {
 					printStats();
-				}
 
 				if (monitorStats) {
 					attron(COLOR_PAIR(3));
@@ -320,78 +223,32 @@ int main() {
 						future_response = future<cpr::Response>{};
 					}
 				}
-				coln++;
-				mvprintw(coln, leftAlign, "Last Submission:");
+				rown++;
+				mvprintw(rown, leftAlign, "Last Submission:");
 				if (errorLine != "") {
 					attron(COLOR_PAIR(1));
-					mvprintw(coln, leftAlign + 17, errorLine.c_str());
+					mvprintw(rown, leftAlign + 17, errorLine.c_str());
 					attroff(COLOR_PAIR(1));
 				} else if (!jsonResponse.empty()) {
 					attron(COLOR_PAIR(2));
-					mvprintw(coln, leftAlign + 17, "https://ddstats.com/game_log/%s", to_string(jsonResponse.at("game_id").get<std::int32_t>()).c_str());
+					mvprintw(rown, leftAlign + 17, "https://ddstats.com/game_log/%s", to_string(jsonResponse.at("game_id").get<std::int32_t>()).c_str());
 					attroff(COLOR_PAIR(2));
 				} else {
-					mvprintw(coln, leftAlign + 17, "None, yet.");
+					mvprintw(rown, leftAlign + 17, "None, yet.");
 				}
-				coln++;
-				mvprintw(coln, leftAlign, "[F10] Exit");
+				rown++;
+				mvprintw(rown, leftAlign, "[F10] Exit");
+
+
+				#if defined _DEBUG
+					printDebug();
+				#endif
 
 				refresh();
 
 				updateOnNextRun = false;
 				timeSinceLastUpdate = clock();
 			}
-
-			//if (updateOnNextRun || clock() - timeSinceLastUpdate > 5000) {
-			//	system("cls");
-			//	//cout << "------------------------------------------------------" << endl;
-			//	//cout << "                      ddstats" << endl;
-			//	printTitle();
-			//	//cout << "------------------------------------------------------" << endl << endl;
-			//	cout << " Game Status: " << gameStatus << endl << endl;
-			//	cout << " In Game Timer: " << inGameTimer << endl;
-			//	cout << " Gem Count: " << gems << endl;
-			//	cout << " Homing Dagger Count: " << homingDaggers << endl;
-			//	cout << " Daggers Fired: " << daggersFired << endl;
-			//	cout << " Daggers Hit: " << daggersHit << endl;
-			//	if (daggersFired > 0.0)
-			//		cout << " Accuracy: " << setprecision(4) << ((float) daggersHit / (float) daggersFired) * 100.0 << "%" << endl;
-			//	else
-			//		cout << " Accuracy: 0%" << endl;
-			//	cout << " Enemies Alive: " << enemiesAlive << endl;
-			//	cout << " Enemies Killed: " << enemiesKilled << endl;
-			//	if (future_response.valid()) {
-			//		if (future_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-			//			auto r = future_response.get();
-			//			if (r.status_code >= 400 || r.status_code == 0) {
-			//				errorLine = " Error [" + to_string(r.status_code) + "] submitting run.";
-			//				jsonResponse = json();
-			//			} else {
-			//				jsonResponse = json::parse(r.text);
-			//				elapsed = r.elapsed;
-			//				errorLine = "";
-			//				submitCounter++;
-			//			}
-			//			future_response = future<cpr::Response>{};
-			//		}
-			//	}
-			//	cout << " Submissions: " << submitCounter << endl;
-			//	if (errorLine != "") {
-			//		std::cout << std::endl << errorLine << std::endl;
-			//	}
-			//	if (!jsonResponse.empty()) {
-			//		std::cout << std::endl << " Game submitted successfully in " << elapsed << " seconds!" << std::endl;
-			//		std::cout << " You can access your game at:" << std::endl;
-			//		std::cout << " https://ddstats.com/api/game/" <<
-			//			jsonResponse.at("game_id").get<std::int32_t>() << std::endl;
-			//	}
-			//	cout << endl << " [F10] Exit" << endl;
-			//	updateOnNextRun = false;
-			//	timeSinceLastUpdate = clock();
-
-			//}
-
-
 
 			if (isGameAvail) {
 				//writeToMemory(hProcHandle);
@@ -427,7 +284,6 @@ int main() {
 					if (GetAsyncKeyState(VK_F12)) {
 						onePressTimer = clock();
 						replayEnabled = !replayEnabled;
-						monitorStats = replayEnabled;
 						updateOnNextRun = true;
 					}
 				}
@@ -456,27 +312,130 @@ int main() {
 	return ERROR_SUCCESS;
 }
 
+void debug(std::string debugStr) {
+	debugVector.push_back(debugStr);
+}
+
+void printDebug() {
+	attron(COLOR_PAIR(1));
+	rown += 2;
+	if (!debugVector.empty())
+		mvprintw(rown, leftAlign, "*************************DEBUG***********************");
+	attron(A_BOLD);
+	for (std::string d : debugVector) {
+		rown++;
+		mvprintw(rown, leftAlign, d.c_str());
+	}
+	attroff(COLOR_PAIR(1));
+	attroff(A_BOLD);
+}
+
+void printStatus() {
+	if (future_motd_response.valid()) {
+		if (future_motd_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+			auto r = future_motd_response.get();
+			if (r.status_code >= 400 || r.status_code == 0) {
+				motd = "Error [" + to_string(r.status_code) + "] connecting to ddstats.com.";
+			}
+			else {
+				motd = json::parse(r.text).at("motd").get<std::string>();
+				validVersion = json::parse(r.text).at("valid_version").get<bool>();
+				updateAvailable = json::parse(r.text).at("update_available").get<bool>();
+			}
+		}
+	}
+	if (updateAvailable) {
+		attron(COLOR_PAIR(2));
+		mvprintw(rown - 1, leftAlign, "(UPDATE AVAILABLE)");
+		attroff(COLOR_PAIR(2));
+	}
+	mvprintw(rown, (col - motd.length()) / 2, "%s", motd.c_str());
+	rown++;
+	if (isGameAvail)
+		attron(COLOR_PAIR(2));
+	else
+		attron(COLOR_PAIR(1));
+	mvprintw(rown, (col - gameStatus.length()) / 2, gameStatus.c_str());
+	if (isGameAvail)
+		attroff(COLOR_PAIR(2));
+	else
+		attroff(COLOR_PAIR(1));
+	rown++;
+	if (recording && (inGameTimer != 0.0)) {
+		attron(COLOR_PAIR(2));
+		attron(A_BOLD);
+		if (isReplay && replayEnabled)
+			recordingStatus = " [[ Recording Replay ]] ";
+		else
+			recordingStatus = " [[ Recording ]] ";
+	}
+	else {
+		attron(COLOR_PAIR(1));
+		recordingStatus = "[[ Not Recording ]]";
+	}
+	mvprintw(rown, (col - recordingStatus.length()) / 2, recordingStatus.c_str());
+	if (recording && (inGameTimer != 0.0)) {
+		attroff(COLOR_PAIR(2));
+		attroff(A_BOLD);
+	}
+	else
+		attroff(COLOR_PAIR(1));
+	rown++;
+}
+
+void printMonitorStats() {
+	// left column
+	mvprintw(rown, leftAlign, "In Game Timer: %.4fs", inGameTimer);
+	rown++;
+	mvprintw(rown, leftAlign, "Daggers Hit: %d", daggersHit);
+	rown++;
+	mvprintw(rown, leftAlign, "Daggers Fired: %d", daggersFired);
+	rown++;
+	if (daggersFired > 0.0)
+		mvprintw(rown, leftAlign, "Accuracy: %.2f%%", ((float)daggersHit / (float)daggersFired) * 100.0);
+	else
+		mvprintw(rown, leftAlign, "Accuracy: 0.00%%", daggersFired);
+
+	// right column
+	rown -= 3;
+	mvprintw(rown, rightAlign - (6 + to_string(gems).length()), "Gems: %d", gems);
+	rown++;
+	mvprintw(rown, rightAlign - (16 + to_string(homingDaggers).length()), "Homing Daggers: %d", homingDaggers);
+	rown++;
+	// fix for title screen
+	if (inGameTimer == 0.0)
+		mvprintw(rown, rightAlign - 16, "Enemies Alive: %d", 0);
+	else
+		mvprintw(rown, rightAlign - (15 + to_string(enemiesAlive).length()), "Enemies Alive: %d", enemiesAlive);
+	rown++;
+	if (inGameTimer = 0.0)
+		mvprintw(rown, rightAlign - 17, "Enemies Killed: %d", 0);
+	else
+		mvprintw(rown, rightAlign - (16 + to_string(enemiesKilled).length()), "Enemies Killed: %d", enemiesKilled);
+	rown++;
+}
+
 void printStats() {
 
 	// left column
-	mvprintw(coln, leftAlign, "In Game Timer: %.4fs", inGameTimerSubmit);
-	coln++;
-	mvprintw(coln, leftAlign, "Daggers Hit: %d", daggersHitSubmit);
-	coln++;
-	mvprintw(coln, leftAlign, "Daggers Fired: %d", daggersFiredSubmit);
-	coln++;
-	mvprintw(coln, leftAlign, "Accuracy: %.2f%%", accuracySubmit);
+	mvprintw(rown, leftAlign, "In Game Timer: %.4fs", inGameTimerSubmit);
+	rown++;
+	mvprintw(rown, leftAlign, "Daggers Hit: %d", daggersHitSubmit);
+	rown++;
+	mvprintw(rown, leftAlign, "Daggers Fired: %d", daggersFiredSubmit);
+	rown++;
+	mvprintw(rown, leftAlign, "Accuracy: %.2f%%", accuracySubmit);
 
 	// right column
-	coln -= 3;
-	mvprintw(coln, rightAlign - (6 + to_string(gemsSubmit).length()), "Gems: %d", gemsSubmit);
-	coln++;
-	mvprintw(coln, rightAlign - (16 + to_string(homingDaggersSubmit).length()), "Homing Daggers: %d", homingDaggersSubmit);
-	coln++;
-	mvprintw(coln, rightAlign - (15 + to_string(enemiesAliveSubmit).length()), "Enemies Alive: %d", enemiesAliveSubmit);
-	coln++;
-	mvprintw(coln, rightAlign - (16 + to_string(enemiesKilledSubmit).length()), "Enemies Killed: %d", enemiesKilledSubmit);
-	coln++;
+	rown -= 3;
+	mvprintw(rown, rightAlign - (6 + to_string(gemsSubmit).length()), "Gems: %d", gemsSubmit);
+	rown++;
+	mvprintw(rown, rightAlign - (16 + to_string(homingDaggersSubmit).length()), "Homing Daggers: %d", homingDaggersSubmit);
+	rown++;
+	mvprintw(rown, rightAlign - (15 + to_string(enemiesAliveSubmit).length()), "Enemies Alive: %d", enemiesAliveSubmit);
+	rown++;
+	mvprintw(rown, rightAlign - (16 + to_string(enemiesKilledSubmit).length()), "Enemies Killed: %d", enemiesKilledSubmit);
+	rown++;
 
 }
 
@@ -504,108 +463,74 @@ void resetVectors() {
 
 void collectGameVars(HANDLE hProcHandle) {
 	DWORD pointer;
-	DWORD pTemp;
+	DWORD playerBaseAddress;
+	DWORD gameBaseAddress;
 	DWORD pointerAddr;
 
+	pointer = exeBaseAddress + playerPointer;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &playerBaseAddress, sizeof(playerBaseAddress), NULL)) {
+		cout << " Failed to read address for player base address." << endl;
+		return;
+	}
+
+	pointer = exeBaseAddress + gamePointer;
+	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &gameBaseAddress, sizeof(gameBaseAddress), NULL)) {
+		cout << " Failed to read address for game base address." << endl;
+		return;
+	}
+
 	// inGameTimer
-	pointer = exeBaseAddress + inGameTimerBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for in game timer." << endl;
-	}
-	else {
-		pointerAddr = pTemp + inGameTimerOffset;
-		oldInGameTimer = inGameTimer;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &inGameTimer, sizeof(inGameTimer), NULL);
-		if ((inGameTimer < oldInGameTimer) && recording) {
-			if (!isReplay) {
-				// submit, but use oldInGameTimer var instead of new... then continue.
-				deathType = -1; // did not die, so no death type.
-				future_response = sendToServer();
-			}
-			resetVectors(); // reset after submit or if player restarted
+	pointer = playerBaseAddress + inGameTimerOffset;
+	oldInGameTimer = inGameTimer;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &inGameTimer, sizeof(inGameTimer), NULL);
+	if ((inGameTimer < oldInGameTimer) && recording && (oldInGameTimer > 4.0)) {
+		if (!isReplay) {
+			// submit, but use oldInGameTimer var instead of new... then continue.
+			deathType = -1; // did not die, so no death type.
+			future_response = sendToServer();
 		}
+		resetVectors(); // reset after submit or if player restarted
 	}
+
 	// isReplay
-	pointer = exeBaseAddress + isReplayBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for alive." << endl;
-	}
-	else {
-		pointerAddr = pTemp + isReplayOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &isReplay, sizeof(isReplay), NULL);
-	}
+	pointer = playerBaseAddress + isReplayOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &isReplay, sizeof(isReplay), NULL);
+
 	// alive
-	pointer = exeBaseAddress + aliveBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for alive." << endl;
-	} else {
-		pointerAddr = pTemp + aliveOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &alive, sizeof(alive), NULL);
-	}
+	pointer = playerBaseAddress + aliveOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &alive, sizeof(alive), NULL);
+
 	// gems
-	pointer = exeBaseAddress + gemsBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for gem counter." << endl;
-	} else {
-		pointerAddr = pTemp + gemsOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gems, sizeof(gems), NULL);
-	}
+	pointer = playerBaseAddress + gemsOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &gems, sizeof(gems), NULL);
+
 	// homingDaggers
-	pointer = exeBaseAddress + homingDaggersBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for homing daggers." << endl;
-	}
-	else {
-		// 2 pointer offsets for homingDaggers
-		pointerAddr = pTemp + 0x0;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &pTemp, sizeof(pTemp), NULL);
-		pointerAddr = pTemp + homingDaggersOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &homingDaggers, sizeof(homingDaggers), NULL);
-	}
+	//pointer = gameBaseAddress + homingDaggersOffset;
+	// 2 pointer offsets for homingDaggers
+	pointerAddr = gameBaseAddress + 0x0;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &pointer, sizeof(pointer), NULL);
+	pointerAddr = pointer + homingDaggersOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &homingDaggers, sizeof(homingDaggers), NULL);
+
 	// daggersFired
-	pointer = exeBaseAddress + daggersFiredBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for daggers fired." << endl;
-	} else {
-		pointerAddr = pTemp + daggersFiredOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &daggersFired, sizeof(daggersFired), NULL);
-	}
+	pointer = playerBaseAddress + daggersFiredOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &daggersFired, sizeof(daggersFired), NULL);
+
 	// daggersHit
-	pointer = exeBaseAddress + daggersHitBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for daggers hit." << endl;
-	}
-	else {
-		pointerAddr = pTemp + daggersHitOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &daggersHit, sizeof(daggersHit), NULL);
-	}
+	pointer = playerBaseAddress + daggersHitOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &daggersHit, sizeof(daggersHit), NULL);
+
 	// enemiesKilled
-	pointer = exeBaseAddress + enemiesKilledBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for enemies killed." << endl;
-	}
-	else {
-		pointerAddr = pTemp + enemiesKilledOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &enemiesKilled, sizeof(enemiesKilled), NULL);
-	}
+	pointer = playerBaseAddress + enemiesKilledOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &enemiesKilled, sizeof(enemiesKilled), NULL);
+	
 	// enemiesAlive
-	pointer = exeBaseAddress + enemiesAliveBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for enemies alive." << endl;
-	}
-	else {
-		pointerAddr = pTemp + enemiesAliveOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &enemiesAlive, sizeof(enemiesAlive), NULL);
-	}
+	pointer = playerBaseAddress + enemiesAliveOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &enemiesAlive, sizeof(enemiesAlive), NULL);
+	
 	// deathType
-	pointer = exeBaseAddress + deathTypeBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for death type." << endl;
-	}
-	else {
-		pointerAddr = pTemp + deathTypeOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &deathType, sizeof(deathType), NULL);
-	}
+	pointer = playerBaseAddress + deathTypeOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &deathType, sizeof(deathType), NULL);
 }
 
 uintptr_t GetModuleBaseAddress(DWORD dwProcID, TCHAR *szModuleName) {
@@ -684,11 +609,6 @@ std::future<cpr::Response> sendToServer() {
 		pointerAddr = pTemp + playerIDOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerID, sizeof(playerID), NULL);
 	}
-	//float accuracy;
-	//if (daggersFired > 0.0)
-	//	accuracy = ((float)daggersHit / (float)daggersFired) * 100.0;
-	//else
-	//	accuracy = 0.0;
 
 	// this fixes the last captured time if user restarts to be accurate
 	float inGameTimerFix;
@@ -703,8 +623,9 @@ std::future<cpr::Response> sendToServer() {
 			replayPlayerID = playerID;
 		else
 			replayPlayerID = getReplayPlayerID(hProcHandle);
-	} else
+	} else {
 		replayPlayerID = 0;
+	}
 
 	json log = {
 		{ "playerID", playerID },
@@ -719,7 +640,6 @@ std::future<cpr::Response> sendToServer() {
 		{ "daggersFiredVector", daggersFiredVector },
 		{ "daggersHit", daggersHit },
 		{ "daggersHitVector", daggersHitVector },
-		// { "accuracy", accuracy },
 		{ "enemiesAlive", enemiesAlive },
 		{ "enemiesAliveVector", enemiesAliveVector },
 		{ "enemiesKilled", enemiesKilled },
@@ -738,13 +658,7 @@ std::future<cpr::Response> sendToServer() {
 	if (daggersFired == 0)
 		accuracySubmit = 0.0;
 	else
-		accuracySubmit = (daggersHit / daggersFired) * 100.0;
-
-	// auto r = cpr::PostAsync(cpr::Url{ "http://www.ddstats.com/api/submit_game" },
-	//auto r = cpr::PostAsync(cpr::Url{ "http://10.0.1.222:5666/submit_game" },
-					  // cpr::Body{ log.dump() },
-					//   cpr::Header{ {"Content-Type", "application/json"} });
-
+		accuracySubmit = ( daggersHit / daggersFired ) * 100.0;
 
 	auto future_response = cpr::PostCallback([](cpr::Response r) {
 		return r;
@@ -752,12 +666,6 @@ std::future<cpr::Response> sendToServer() {
 		cpr::Url{ "http://ddstats.com/api/submit_game" },
 		cpr::Body{ log.dump() }, 
 		cpr::Header{ { "Content-Type", "application/json" } });
-
-	//pending_futures.push_back(std::move(future_text));
-	//// Sometime later
-	//if (future_text.wait_for(chrono::seconds(0)) == future_status::ready) {
-	//	cout << future_text.get() << endl;
-	//}
 
 	return future_response;
 
@@ -773,23 +681,19 @@ std::future<cpr::Response> getMOTD() {
 	return future_response;
 }
 
-void printTitle(WINDOW *win) {
-
-	int row, col;
-
-	getmaxyx(win, row, col);
+void printTitle() {
 
 	// length = 66
 	attron(COLOR_PAIR(1));
-	mvprintw(1, (col - 66) / 2, "@@@@@@@   @@@@@@@    @@@@@@   @@@@@@@   @@@@@@   @@@@@@@   @@@@@@ ");
-	mvprintw(2, (col - 66) / 2, "@@@@@@@@  @@@@@@@@  @@@@@@@   @@@@@@@  @@@@@@@@  @@@@@@@  @@@@@@@ ");
-	mvprintw(3, (col - 66) / 2, "@@!  @@@  @@!  @@@  !@@         @@!    @@!  @@@    @@!    !@@     ");
-	mvprintw(4, (col - 66) / 2, "!@!  @!@  !@!  @!@  !@!         !@!    !@!  @!@    !@!    !@!     ");
-	mvprintw(5, (col - 66) / 2, "@!@  !@!  @!@  !@!  !!@@!!      @!!    @!@!@!@!    @!!    !!@@!!  ");
-	mvprintw(6, (col - 66) / 2, "!@!  !!!  !@!  !!!   !!@!!!     !!!    !!!@!!!!    !!!     !!@!!! ");
-	mvprintw(7, (col - 66) / 2, "!!:  !!!  !!:  !!!       !:!    !!:    !!:  !!!    !!:         !:!");
-	mvprintw(8, (col - 66) / 2, ":!:  !:!  :!:  !:!      !:!     :!:    :!:  !:!    :!:        !:! ");
-	mvprintw(9, (col - 66) / 2, " :::: ::   :::: ::  :::: ::      ::    ::   :::     ::    :::: :: ");
+	mvprintw(1, (col - 66) / 2,  "@@@@@@@   @@@@@@@    @@@@@@   @@@@@@@   @@@@@@   @@@@@@@   @@@@@@ ");
+	mvprintw(2, (col - 66) / 2,  "@@@@@@@@  @@@@@@@@  @@@@@@@   @@@@@@@  @@@@@@@@  @@@@@@@  @@@@@@@ ");
+	mvprintw(3, (col - 66) / 2,  "@@!  @@@  @@!  @@@  !@@         @@!    @@!  @@@    @@!    !@@     ");
+	mvprintw(4, (col - 66) / 2,  "!@!  @!@  !@!  @!@  !@!         !@!    !@!  @!@    !@!    !@!     ");
+	mvprintw(5, (col - 66) / 2,  "@!@  !@!  @!@  !@!  !!@@!!      @!!    @!@!@!@!    @!!    !!@@!!  ");
+	mvprintw(6, (col - 66) / 2,  "!@!  !!!  !@!  !!!   !!@!!!     !!!    !!!@!!!!    !!!     !!@!!! ");
+	mvprintw(7, (col - 66) / 2,  "!!:  !!!  !!:  !!!       !:!    !!:    !!:  !!!    !!:         !:!");
+	mvprintw(8, (col - 66) / 2,  ":!:  !:!  :!:  !:!      !:!     :!:    :!:  !:!    :!:        !:! ");
+	mvprintw(9, (col - 66) / 2,  " :::: ::   :::: ::  :::: ::      ::    ::   :::     ::    :::: :: ");
 	mvprintw(10, (col - 66) / 2, ":: :  :   :: :  :   :: : :       :      :   : :     :     :: : : ");
 	mvprintw(11, ((col - 66) / 2) + (66 - version.length()-2), "v%s", version.c_str());
 	attroff(COLOR_PAIR(1));
@@ -869,12 +773,12 @@ bool replayUsernameMatch() {
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerName, sizeof(playerName), NULL);
 		// replay name
 		pointerAddr = pTemp + 0x360;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerName, sizeof(playerName), NULL);
-
-		if (!strncmp(playerName, replayName, playerNameCharCount))
-			return true;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &replayName, sizeof(replayName), NULL);
 		
+		if (!strncmp(playerName, replayName, playerNameCharCount)) {
+			return true;
+		}
 	}
 
-	return false;
+	false;
 }
