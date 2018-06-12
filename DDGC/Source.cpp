@@ -106,6 +106,7 @@ DWORD daggersHitBaseAddress = 0x001F30C0;
 DWORD daggersHitOffset = 0x1B8;
 vector <int> daggersHitVector;
 int enemiesAlive;
+int enemiesAliveMax = 0;
 DWORD enemiesAliveBaseAddress = 0x001F30C0;
 DWORD enemiesAliveOffset = 0x1FC;
 vector <int> enemiesAliveVector;
@@ -132,6 +133,7 @@ int main() {
 	// set up curses
 	WINDOW *stdscr = initscr();
 	raw();
+	timeout(-1); // async getch
 	keypad(stdscr, TRUE);
 	noecho();
 	start_color();
@@ -188,15 +190,6 @@ int main() {
 				clear();
 				rown = 12; // row number
 
-				printTitle();
-
-				printStatus();
-
-				if (monitorStats || isReplay)
-					printMonitorStats();
-				else
-					printStats();
-
 				if (monitorStats) {
 					attron(COLOR_PAIR(3));
 					mvprintw(0, leftAlign, "+s");
@@ -207,6 +200,15 @@ int main() {
 					mvprintw(0, leftAlign + 2, "+r");
 					attroff(COLOR_PAIR(4));
 				}
+
+				printTitle();
+
+				printStatus();
+
+				if (monitorStats || isReplay)
+					printMonitorStats();
+				else
+					printStats();
 
 				if (future_response.valid()) {
 					if (future_response.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -263,12 +265,14 @@ int main() {
 				}
 				if (!alive && recording == true) {
 					recording = false;
-					// this is to assure the correct last entry when user dies
-					if (!homingDaggersVector.empty())
-						homingDaggers = homingDaggersVector.back();
-					// submit
-					commitVectors(); // one last commit to make sure death time is accurate
-					future_response = sendToServer();
+					if (inGameTimer > 4.0) {
+						// this is to assure the correct last entry when user dies
+						if (!homingDaggersVector.empty())
+							homingDaggers = homingDaggersVector.back();
+						// submit
+						commitVectors(); // one last commit to make sure death time is accurate
+						future_response = sendToServer();
+					}
 					resetVectors(); // reset after submit
 				}
 
@@ -302,7 +306,7 @@ int main() {
 
 		// this is to make sure all points are captured when fast-forwarding
 		if (isReplay && replayEnabled)
-			Sleep(5);
+			Sleep(1);
 		else
 			Sleep(15); // cut back on some(?) overhead
 	}
@@ -446,7 +450,9 @@ void commitVectors() {
 	homingDaggersVector.push_back(homingDaggers);
 	daggersFiredVector.push_back(daggersFired);
 	daggersHitVector.push_back(daggersHit);
-	enemiesAliveVector.push_back(enemiesAlive);
+	if (inGameTimer < 1.0) enemiesAliveMax = 0; // fixes issue with enemies alive being recorded at title screen
+	enemiesAliveVector.push_back(enemiesAliveMax);
+	enemiesAliveMax = 0;
 	enemiesKilledVector.push_back(enemiesKilled);
 }
 
@@ -458,6 +464,7 @@ void resetVectors() {
 	daggersFiredVector.clear();
 	daggersHitVector.clear();
 	enemiesAliveVector.clear();
+	enemiesAliveMax = 0;
 	enemiesKilledVector.clear();
 }
 
@@ -527,6 +534,8 @@ void collectGameVars(HANDLE hProcHandle) {
 	// enemiesAlive
 	pointer = playerBaseAddress + enemiesAliveOffset;
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &enemiesAlive, sizeof(enemiesAlive), NULL);
+	if (enemiesAlive > enemiesAliveMax) // since variables reset, this chooses the max variable over the second
+		enemiesAliveMax = enemiesAlive;
 	
 	// deathType
 	pointer = playerBaseAddress + deathTypeOffset;
@@ -749,7 +758,7 @@ bool replayUsernameMatch() {
 	DWORD pointerAddr;
 
 	// player name char count
-	pointer = exeBaseAddress + 0x001F30C0;
+	pointer = exeBaseAddress + playerPointer;
 	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
 		cout << " Failed to read address for player base." << endl;
 	}
