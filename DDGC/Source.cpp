@@ -10,12 +10,14 @@
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
 #include <curses.h>
+#include <Psapi.h>
+#include "md5.h"
 
 using namespace std;
 using json = nlohmann::json;
 
 // current version
-std::string version = "0.2.2";
+std::string version = "0.2.4";
 bool updateAvailable = false;
 bool validVersion = true;
 
@@ -39,6 +41,7 @@ int getReplayPlayerID(HANDLE process);
 bool replayUsernameMatch();
 void debug(std::string debugStr);
 void printDebug();
+std::string getSurvivalHash();
 
 float inGameTimerSubmit = 0.0;
 int gemsSubmit = 0;
@@ -52,6 +55,8 @@ float accuracySubmit = 0.0;
 int row, col;
 int rown;
 int leftAlign, rightAlign, centerAlign;
+int ch;
+MEVENT event;
 
 string gameName = "Devil Daggers";
 LPCSTR gameWindow = "Devil Daggers";
@@ -86,9 +91,17 @@ float inGameTimer;
 DWORD inGameTimerBaseAddress = 0x001F30C0;
 DWORD inGameTimerOffset = 0x1A0;
 vector <float> inGameTimerVector;
-int playerID;
+int playerID = -1;
 DWORD playerIDBaseAddress = 0x001F30C0;
 DWORD playerIDOffset = 0x5C;
+int gemsUpgrade;
+DWORD gemsUpgradeOffset = 0x218;
+float levelTwo = 0.0;
+float levelThree = 0.0;
+float levelFour = 0.0;
+float levelTwoSubmit = 0.0;
+float levelThreeSubmit = 0.0;
+float levelFourSubmit = 0.0;
 int gems;
 DWORD gemsBaseAddress = 0x001F30C0;
 DWORD gemsOffset = 0x1C0;
@@ -124,6 +137,14 @@ bool isReplay;
 DWORD isReplayBaseAddress = 0x001F30C0;
 DWORD isReplayOffset = 0x35D;
 int replayPlayerID;
+DWORD playerNameCharCountOffset = 0x70;
+int playerNameCharCount;
+DWORD playerNameOffset = 0x60;
+char playerName[128];
+DWORD replayPlayerNameCharCountOffset = 0x370;
+int replayPlayerNameCharCount;
+DWORD replayPlayerNameOffset = 0x360;
+char replayPlayerName[128];
 
 std::vector<std::string> debugVector;
 
@@ -133,8 +154,8 @@ int main() {
 	// set up curses
 	WINDOW *stdscr = initscr();
 	raw();
-	timeout(-1); // async getch
-	keypad(stdscr, TRUE);
+	nodelay(stdscr, true);
+	keypad(stdscr, true);
 	noecho();
 	start_color();
 	curs_set(0);
@@ -151,6 +172,7 @@ int main() {
 	init_pair(2, COLOR_GREEN, COLOR_BLACK);
 	init_pair(3, COLOR_MAGENTA, COLOR_BLACK);
 	init_pair(4, COLOR_YELLOW, COLOR_BLACK);
+	// mousemask(ALL_MOUSE_EVENTS, NULL);
 
 	HWND hGameWindow = NULL;
 	int timeSinceLastUpdate = clock();
@@ -201,6 +223,12 @@ int main() {
 					attroff(COLOR_PAIR(4));
 				}
 
+				if (strlen(playerName) != 0) {
+					attron(COLOR_PAIR(1));
+					mvprintw(rown-1, leftAlign, playerName);
+					attroff(COLOR_PAIR(1));
+				}
+
 				printTitle();
 
 				printStatus();
@@ -234,13 +262,13 @@ int main() {
 				} else if (!jsonResponse.empty()) {
 					attron(COLOR_PAIR(2));
 					mvprintw(rown, leftAlign + 17, "https://ddstats.com/game_log/%s", to_string(jsonResponse.at("game_id").get<std::int32_t>()).c_str());
+
 					attroff(COLOR_PAIR(2));
 				} else {
 					mvprintw(rown, leftAlign + 17, "None, yet.");
 				}
 				rown++;
 				mvprintw(rown, leftAlign, "[F10] Exit");
-
 
 				#if defined _DEBUG
 					printDebug();
@@ -417,6 +445,8 @@ void printMonitorStats() {
 	else
 		mvprintw(rown, rightAlign - (16 + to_string(enemiesKilled).length()), "Enemies Killed: %d", enemiesKilled);
 	rown++;
+	mvprintw(rown, rightAlign - 3, "Gems: %d", gemsUpgrade);
+	rown++;
 }
 
 void printStats() {
@@ -440,6 +470,8 @@ void printStats() {
 	rown++;
 	mvprintw(rown, rightAlign - (16 + to_string(enemiesKilledSubmit).length()), "Enemies Killed: %d", enemiesKilledSubmit);
 	rown++;
+	mvprintw(rown, rightAlign - (14 + to_string(levelTwoSubmit).length()), "Level Two At: %.4fs", levelTwoSubmit);
+	rown++;
 
 }
 
@@ -454,6 +486,9 @@ void commitVectors() {
 	enemiesAliveVector.push_back(enemiesAliveMax);
 	enemiesAliveMax = 0;
 	enemiesKilledVector.push_back(enemiesKilled);
+	if (gemsUpgrade <= 10 && levelTwo == 0.0) levelTwo = inGameTimer;
+	if (gemsUpgrade == 70 && levelTwo == 0.0) levelThree = inGameTimer;
+	if (gemsUpgrade == 71 && levelTwo == 0.0) levelFour = inGameTimer;
 }
 
 void resetVectors() {
@@ -466,6 +501,11 @@ void resetVectors() {
 	enemiesAliveVector.clear();
 	enemiesAliveMax = 0;
 	enemiesKilledVector.clear();
+	// clear out the replay player's name
+	std::fill(std::begin(replayPlayerName), std::end(replayPlayerName), '\0');
+	levelTwo = 0.0;
+	levelThree = 0.0;
+	levelFour = 0.0;
 }
 
 void collectGameVars(HANDLE hProcHandle) {
@@ -507,6 +547,12 @@ void collectGameVars(HANDLE hProcHandle) {
 	pointer = playerBaseAddress + aliveOffset;
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &alive, sizeof(alive), NULL);
 
+	// gems upgrade
+	pointerAddr = gameBaseAddress + 0x0;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &pointer, sizeof(pointer), NULL);
+	pointerAddr = pointer + gemsUpgradeOffset;
+	ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &gemsUpgrade, sizeof(gemsUpgrade), NULL);
+
 	// gems
 	pointer = playerBaseAddress + gemsOffset;
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &gems, sizeof(gems), NULL);
@@ -540,6 +586,34 @@ void collectGameVars(HANDLE hProcHandle) {
 	// deathType
 	pointer = playerBaseAddress + deathTypeOffset;
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &deathType, sizeof(deathType), NULL);
+
+	// get playerID while recording iff it hasn't been retrieved yet
+	if (playerID == -1 && recording) {
+		pointer = playerBaseAddress + playerIDOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &playerID, sizeof(playerID), NULL);
+	}
+
+	// get user name
+	if (strlen(playerName) == 0 && recording) {
+		pointer = playerBaseAddress + playerNameCharCountOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &playerNameCharCount, sizeof(playerNameCharCount), NULL);
+
+		pointer = playerBaseAddress + playerNameOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &playerName, sizeof(playerName), NULL);
+
+		playerName[playerNameCharCount] = '\0';
+	}
+
+	// get replay user name
+	if (strlen(replayPlayerName) == 0 && recording && isReplay) {
+		pointer = playerBaseAddress + replayPlayerNameCharCountOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &replayPlayerNameCharCount, sizeof(replayPlayerNameCharCount), NULL);
+
+		pointer = playerBaseAddress + replayPlayerNameOffset;
+		ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &replayPlayerName, sizeof(replayPlayerName), NULL);
+
+		replayPlayerName[replayPlayerNameCharCount] = '\0';
+	}
 }
 
 uintptr_t GetModuleBaseAddress(DWORD dwProcID, TCHAR *szModuleName) {
@@ -608,15 +682,17 @@ std::future<cpr::Response> sendToServer() {
 	DWORD pointer;
 	DWORD pTemp;
 	DWORD pointerAddr;
-
-	// get playerID
-	pointer = exeBaseAddress + playerIDBaseAddress;
-	if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
-		cout << " Failed to read address for playerID." << endl;
-	}
-	else {
-		pointerAddr = pTemp + playerIDOffset;
-		ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerID, sizeof(playerID), NULL);
+	 
+	// get playerID if it hasn't been retreieved yet..
+	if (playerID == -1) {
+		pointer = exeBaseAddress + playerIDBaseAddress;
+		if (!ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &pTemp, sizeof(pTemp), NULL)) {
+			cout << " Failed to read address for playerID." << endl;
+		}
+		else {
+			pointerAddr = pTemp + playerIDOffset;
+			ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &playerID, sizeof(playerID), NULL);
+		}
 	}
 
 	// this fixes the last captured time if user restarts to be accurate
@@ -628,16 +704,22 @@ std::future<cpr::Response> sendToServer() {
 	}
 
 	if (isReplay && !alive) {
-		if (replayUsernameMatch())
+		if (replayUsernameMatch()) {
 			replayPlayerID = playerID;
-		else
+			strcpy_s(replayPlayerName, playerName);
+		} else {
 			replayPlayerID = getReplayPlayerID(hProcHandle);
+		}
 	} else {
 		replayPlayerID = 0;
+		strcpy_s(replayPlayerName, "none");
 	}
+
+	std::string survivalHash = getSurvivalHash();
 
 	json log = {
 		{ "playerID", playerID },
+		{ "playerName", playerName },
 		{ "granularity", interval },
 		{ "inGameTimer", inGameTimerFix },
 		{ "inGameTimerVector", inGameTimerVector },
@@ -654,7 +736,9 @@ std::future<cpr::Response> sendToServer() {
 		{ "enemiesKilled", enemiesKilled },
 		{ "enemiesKilledVector", enemiesKilledVector },
 		{ "deathType", deathType },
-		{ "replayPlayerID", replayPlayerID }
+		{ "replayPlayerID", replayPlayerID },
+		{ "version", version },
+		{ "survivalHash", survivalHash }
 	};
 
 	inGameTimerSubmit = inGameTimerFix;
@@ -668,10 +752,14 @@ std::future<cpr::Response> sendToServer() {
 		accuracySubmit = 0.0;
 	else
 		accuracySubmit = ( daggersHit / daggersFired ) * 100.0;
+	levelTwoSubmit = levelTwo;
+	levelThreeSubmit = levelThree;
+	levelFourSubmit = levelFour;
 
 	auto future_response = cpr::PostCallback([](cpr::Response r) {
 		return r;
 	}, 
+		// cpr::Url{ "http://10.0.1.222:5666/api/submit_game" },
 		cpr::Url{ "http://ddstats.com/api/submit_game" },
 		cpr::Body{ log.dump() }, 
 		cpr::Header{ { "Content-Type", "application/json" } });
@@ -791,4 +879,17 @@ bool replayUsernameMatch() {
 	}
 
 	return false;
+}
+
+std::string getSurvivalHash() {
+	wchar_t buf[MAX_PATH];
+	if (hProcHandle) GetModuleFileNameExW(hProcHandle, 0, buf, MAX_PATH);
+	wstring ws(buf);
+	string str(ws.begin(), ws.end());
+	str = str.substr(0, str.size() - 4);
+	str += "\\survival";
+	std::ifstream fp(str);
+	std::stringstream ss;
+	ss << fp.rdbuf();
+	return md5(ss.str());
 }
