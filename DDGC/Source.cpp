@@ -530,8 +530,8 @@ void commitVectors() {
 	enemiesAliveMax = 0;
 	enemiesKilledVector.push_back(enemiesKilled);
 	if (gemsUpgrade >= 10 && levelTwo == 0.0) levelTwo = inGameTimer;
-	if (gemsUpgrade == 70 && levelTwo == 0.0) levelThree = inGameTimer;
-	if (gemsUpgrade == 71 && levelTwo == 0.0) levelFour = inGameTimer;
+	if (gemsUpgrade == 70 && levelThree == 0.0) levelThree = inGameTimer;
+	if (gemsUpgrade == 71 && levelFour == 0.0) levelFour = inGameTimer;
 }
 
 void resetVectors() {
@@ -780,9 +780,9 @@ std::future<cpr::Response> sendToServer() {
 		{ "inGameTimerVector", inGameTimerVector },
 		{ "gems", gems },
 		{ "gemsVector", gemsVector },
-		{ "levelTwoTime", levelTwoSubmit },
-		{ "levelThreeTime", levelThreeSubmit },
-		{ "levelFourTime", levelFourSubmit },
+		{ "levelTwoTime", levelTwo },
+		{ "levelThreeTime", levelThree },
+		{ "levelFourTime", levelFour },
 		{ "homingDaggers", homingDaggers },
 		{ "homingDaggersVector", homingDaggersVector },
 		{ "homingDaggersMax", homingDaggersMaxTotal },
