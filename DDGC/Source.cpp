@@ -69,6 +69,7 @@ bool isGameAvail;
 bool updateOnNextRun;
 bool recording = false;
 bool monitorStats = false;
+bool live = false;
 
 int recordingCounter = 0;
 std::string motd = "";
@@ -157,7 +158,7 @@ std::vector<std::string> debugVector;
 int main() {
 	sio::client h;
 	h.connect("http://www.ddstats.com");
-	h.socket("/test")->emit("testing");
+	// h.connect("http://10.0.1.222:5666");
 
 	// set up curses
 	// MEVENT event;
@@ -181,20 +182,21 @@ int main() {
 	init_pair(2, COLOR_GREEN, COLOR_BLACK);
 	init_pair(3, COLOR_MAGENTA, COLOR_BLACK);
 	init_pair(4, COLOR_YELLOW, COLOR_BLACK);
-	// mousemask(ALL_MOUSE_EVENTS, NULL);
+	mousemask(ALL_MOUSE_EVENTS, NULL);
 	// int ch;
 
 	HWND hGameWindow = NULL;
 	int timeSinceLastUpdate = clock();
 	int gameAvailTimer = clock();
 	int onePressTimer = clock();
+	int copyClickTimer = clock();
 
 	DWORD dwProcID = NULL;
 	updateOnNextRun = true;
 
 	future_motd_response = getMOTD();
 
-	mouseinterval(500);
+	// mouseinterval(500);
 
 	while (!GetAsyncKeyState(VK_F10)) {
 		// ch = getch();
@@ -208,8 +210,15 @@ int main() {
 		//	}
 		//}
 
-		if (GetAsyncKeyState(VK_LBUTTON) && (GetConsoleWindow() == GetForegroundWindow()) && !lastGameSubmission.empty()) {
+		if (!live && isGameAvail && (playerID != -1)) {
+			std::string test_msg = "testing";
+			h.socket()->emit("message", to_string(playerID));
+			live = true;
+		}
+
+		if (!lastGameSubmission.empty() && GetAsyncKeyState(VK_LBUTTON) && (GetConsoleWindow() == GetForegroundWindow())) {
 			copyToClipboard(lastGameSubmission);
+			copyClickTimer = clock();
 		}
 
 		if ((clock() - gameAvailTimer > 100) && validVersion) {
@@ -251,6 +260,17 @@ int main() {
 					attroff(COLOR_PAIR(1));
 				}
 
+				if (h.opened()) {
+					attron(COLOR_PAIR(2));
+					mvprintw(rown-1, (col - 12) / 2, "[[ Online ]]");
+					attroff(COLOR_PAIR(2));
+				}
+				else {
+					attron(COLOR_PAIR(1));
+					mvprintw(rown-1, (col - 13) / 2, "[[ Offline ]]");
+					attroff(COLOR_PAIR(1));
+				}
+
 				printTitle();
 
 				printStatus();
@@ -286,8 +306,10 @@ int main() {
 					oss <<  "https://ddstats.com/game_log/" << to_string(jsonResponse.at("game_id").get<std::int32_t>());
 					lastGameSubmission = oss.str();
 					attron(COLOR_PAIR(2));
-					mvprintw(rown, leftAlign + 17, lastGameSubmission.c_str());
-
+					if (clock() - copyClickTimer < 1500)
+						mvprintw(rown, leftAlign + 17, "(copied to clipboard)");
+					else
+						mvprintw(rown, leftAlign + 17, lastGameSubmission.c_str());
 					attroff(COLOR_PAIR(2));
 				} else {
 					mvprintw(rown, leftAlign + 17, "None, yet.");
@@ -621,7 +643,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &deathType, sizeof(deathType), NULL);
 
 	// get playerID while recording iff it hasn't been retrieved yet
-	if (playerID == -1 && recording) {
+	if (playerID == -1) {// && recording) {
 		pointer = playerBaseAddress + playerIDOffset;
 		ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &playerID, sizeof(playerID), NULL);
 	}
