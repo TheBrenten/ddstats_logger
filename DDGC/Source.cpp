@@ -12,6 +12,7 @@
 #include <curses.h>
 #include <Psapi.h>
 #include "md5.h"
+#include "sio_client.h"
 
 using namespace std;
 using json = nlohmann::json;
@@ -67,7 +68,6 @@ bool isGameAvail;
 bool updateOnNextRun;
 bool recording = false;
 bool monitorStats = false;
-bool replayEnabled = false;
 
 int recordingCounter = 0;
 std::string motd = "";
@@ -96,12 +96,12 @@ DWORD playerIDBaseAddress = 0x001F30C0;
 DWORD playerIDOffset = 0x5C;
 int gemsUpgrade;
 DWORD gemsUpgradeOffset = 0x218;
-float levelTwo = 0.0;
-float levelThree = 0.0;
-float levelFour = 0.0;
-float levelTwoSubmit = 0.0;
-float levelThreeSubmit = 0.0;
-float levelFourSubmit = 0.0;
+double levelTwo = 0.0;
+double levelThree = 0.0;
+double levelFour = 0.0;
+double levelTwoSubmit = 0.0;
+double levelThreeSubmit = 0.0;
+double levelFourSubmit = 0.0;
 int gems;
 DWORD gemsBaseAddress = 0x001F30C0;
 DWORD gemsOffset = 0x1C0;
@@ -145,11 +145,18 @@ DWORD replayPlayerNameCharCountOffset = 0x370;
 int replayPlayerNameCharCount;
 DWORD replayPlayerNameOffset = 0x360;
 char replayPlayerName[128];
+int homingDaggersMaxTotal = 0;
+double homingDaggersMaxTotalTime = 0.0;
+int enemiesAliveMaxTotal = 0;
+double enemiesAliveMaxTotalTime = 0.0;
 
 std::vector<std::string> debugVector;
 
  
 int main() {
+	sio::client h;
+	h.connect("http://www.ddstats.com");
+	h.socket("/test")->emit("testing");
 
 	// set up curses
 	WINDOW *stdscr = initscr();
@@ -195,14 +202,14 @@ int main() {
 				if (dwProcID) {
 					hProcHandle = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, dwProcID);
 					if (hProcHandle == INVALID_HANDLE_VALUE || hProcHandle == NULL) {
-						gameStatus = "Failed to open process with valid handle.";
+						gameStatus = "Failed to open process handle. Try running as Administrator.";
 					} else {
 						gameStatus = "[[ Connected to Devil Daggers ]]";
 						exeBaseAddress = GetModuleBaseAddress(dwProcID, (_TCHAR*)_T("dd.exe"));
 						isGameAvail = true;
 					}
 				} else {
-					gameStatus = "Failed to get process ID.";
+					gameStatus = "Failed to get process ID. Try running as Administrator.";
 				}
 			} else {
 				gameStatus = "[[ Devil Daggers not found ]]";
@@ -216,11 +223,6 @@ int main() {
 					attron(COLOR_PAIR(3));
 					mvprintw(0, leftAlign, "+s");
 					attroff(COLOR_PAIR(3));
-				}
-				if (replayEnabled) {
-					attron(COLOR_PAIR(4));
-					mvprintw(0, leftAlign + 2, "+r");
-					attroff(COLOR_PAIR(4));
 				}
 
 				if (strlen(playerName) != 0) {
@@ -284,11 +286,13 @@ int main() {
 				//writeToMemory(hProcHandle);
 				collectGameVars(hProcHandle);
 				if (alive && inGameTimer > 0) {
-					if ((!isReplay) || (isReplay && replayEnabled)) {
-						recording = true;
-						if (recordingCounter < inGameTimer) {
-							commitVectors();
-						}
+					//if (inGameTimer < 1.0) {
+					//	enemiesAliveMaxTotal = 0.0;
+					//	homingDaggersMaxTotal = 0.0;
+					//}
+					recording = true;
+					if (recordingCounter < inGameTimer) {
+						commitVectors();
 					}
 				}
 				if (!alive && recording == true) {
@@ -313,11 +317,6 @@ int main() {
 						monitorStats = !monitorStats;
 						updateOnNextRun = true;
 					}
-					if (GetAsyncKeyState(VK_F12)) {
-						onePressTimer = clock();
-						replayEnabled = !replayEnabled;
-						updateOnNextRun = true;
-					}
 				}
 			}
 
@@ -333,7 +332,7 @@ int main() {
 		}
 
 		// this is to make sure all points are captured when fast-forwarding
-		if (isReplay && replayEnabled)
+		if (isReplay)
 			Sleep(1);
 		else
 			Sleep(15); // cut back on some(?) overhead
@@ -396,7 +395,7 @@ void printStatus() {
 	if (recording && (inGameTimer != 0.0)) {
 		attron(COLOR_PAIR(2));
 		attron(A_BOLD);
-		if (isReplay && replayEnabled)
+		if (isReplay)
 			recordingStatus = " [[ Recording Replay ]] ";
 		else
 			recordingStatus = " [[ Recording ]] ";
@@ -445,8 +444,7 @@ void printMonitorStats() {
 	else
 		mvprintw(rown, rightAlign - (16 + to_string(enemiesKilled).length()), "Enemies Killed: %d", enemiesKilled);
 	rown++;
-	mvprintw(rown, rightAlign - 3, "Gems: %d", gemsUpgrade);
-	rown++;
+
 }
 
 void printStats() {
@@ -470,8 +468,8 @@ void printStats() {
 	rown++;
 	mvprintw(rown, rightAlign - (16 + to_string(enemiesKilledSubmit).length()), "Enemies Killed: %d", enemiesKilledSubmit);
 	rown++;
-	mvprintw(rown, rightAlign - (14 + to_string(levelTwoSubmit).length()), "Level Two At: %.4fs", levelTwoSubmit);
-	rown++;
+	//mvprintw(rown, rightAlign - (14 + to_string(levelTwoSubmit).length()), "Level Two At: %.4fs", levelTwoSubmit);
+	//rown++;
 
 }
 
@@ -486,7 +484,7 @@ void commitVectors() {
 	enemiesAliveVector.push_back(enemiesAliveMax);
 	enemiesAliveMax = 0;
 	enemiesKilledVector.push_back(enemiesKilled);
-	if (gemsUpgrade <= 10 && levelTwo == 0.0) levelTwo = inGameTimer;
+	if (gemsUpgrade >= 10 && levelTwo == 0.0) levelTwo = inGameTimer;
 	if (gemsUpgrade == 70 && levelTwo == 0.0) levelThree = inGameTimer;
 	if (gemsUpgrade == 71 && levelTwo == 0.0) levelFour = inGameTimer;
 }
@@ -506,6 +504,10 @@ void resetVectors() {
 	levelTwo = 0.0;
 	levelThree = 0.0;
 	levelFour = 0.0;
+	homingDaggersMaxTotal = 0;
+	homingDaggersMaxTotalTime = 0.0;
+	enemiesAliveMaxTotal = 0;
+	enemiesAliveMaxTotalTime = 0.0;
 }
 
 void collectGameVars(HANDLE hProcHandle) {
@@ -564,6 +566,10 @@ void collectGameVars(HANDLE hProcHandle) {
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &pointer, sizeof(pointer), NULL);
 	pointerAddr = pointer + homingDaggersOffset;
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &homingDaggers, sizeof(homingDaggers), NULL);
+	if ((homingDaggers > homingDaggersMaxTotal) && recording) {
+		homingDaggersMaxTotal = homingDaggers;
+		homingDaggersMaxTotalTime = inGameTimer;
+	}
 
 	// daggersFired
 	pointer = playerBaseAddress + daggersFiredOffset;
@@ -582,6 +588,10 @@ void collectGameVars(HANDLE hProcHandle) {
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointer, &enemiesAlive, sizeof(enemiesAlive), NULL);
 	if (enemiesAlive > enemiesAliveMax) // since variables reset, this chooses the max variable over the second
 		enemiesAliveMax = enemiesAlive;
+	if ((enemiesAlive > enemiesAliveMaxTotal) && recording) {
+		enemiesAliveMaxTotal = enemiesAlive;
+		enemiesAliveMaxTotalTime = inGameTimer;
+	}
 	
 	// deathType
 	pointer = playerBaseAddress + deathTypeOffset;
@@ -725,14 +735,21 @@ std::future<cpr::Response> sendToServer() {
 		{ "inGameTimerVector", inGameTimerVector },
 		{ "gems", gems },
 		{ "gemsVector", gemsVector },
+		{ "levelTwoTime", levelTwoSubmit },
+		{ "levelThreeTime", levelThreeSubmit },
+		{ "levelFourTime", levelFourSubmit },
 		{ "homingDaggers", homingDaggers },
 		{ "homingDaggersVector", homingDaggersVector },
+		{ "homingDaggersMax", homingDaggersMaxTotal },
+		{ "homingDaggersMaxTime", homingDaggersMaxTotalTime },
 		{ "daggersFired", daggersFired },
 		{ "daggersFiredVector", daggersFiredVector },
 		{ "daggersHit", daggersHit },
 		{ "daggersHitVector", daggersHitVector },
 		{ "enemiesAlive", enemiesAlive },
 		{ "enemiesAliveVector", enemiesAliveVector },
+		{ "enemiesAliveMax", enemiesAliveMaxTotal },
+		{ "enemiesAliveMaxTime", enemiesAliveMaxTotalTime },
 		{ "enemiesKilled", enemiesKilled },
 		{ "enemiesKilledVector", enemiesKilledVector },
 		{ "deathType", deathType },
@@ -751,7 +768,7 @@ std::future<cpr::Response> sendToServer() {
 	if (daggersFired == 0)
 		accuracySubmit = 0.0;
 	else
-		accuracySubmit = ( daggersHit / daggersFired ) * 100.0;
+		accuracySubmit = (float) (( daggersHit / daggersFired ) * 100.0);
 	levelTwoSubmit = levelTwo;
 	levelThreeSubmit = levelThree;
 	levelFourSubmit = levelFour;

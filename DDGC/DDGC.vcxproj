@@ -104,15 +104,15 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>C:\Users\alex\source\repos\DDGC\DDGC\Include\internal;C:\Users\alex\source\repos\DDGC\DDGC\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\alex\vcpkg\packages\cpr_x86-windows-static\include;C:\Users\alex\socket.io-client-cpp\lib\rapidjson\include;C:\Users\alex\websocketpp;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <DelayLoadDLLs>cpr.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalOptions>"C:\Users\alex\source\repos\DDGC\DDGC\sioclient.lib" %(AdditionalOptions)</AdditionalOptions>
+      <DelayLoadDLLs>%(DelayLoadDLLs)</DelayLoadDLLs>
+      <AdditionalDependencies>cpr.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Users\alex\vcpkg\packages\cpr_x86-windows-static\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -130,11 +130,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="internal\sio_client_impl.cpp" />
+    <ClCompile Include="internal\sio_packet.cpp" />
     <ClCompile Include="md5.cpp" />
+    <ClCompile Include="sio_client.cpp" />
+    <ClCompile Include="sio_socket.cpp" />
     <ClCompile Include="Source.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="internal\sio_client_impl.h" />
+    <ClInclude Include="internal\sio_packet.h" />
     <ClInclude Include="md5.h" />
+    <ClInclude Include="sio_client.h" />
+    <ClInclude Include="sio_message.h" />
+    <ClInclude Include="sio_socket.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
