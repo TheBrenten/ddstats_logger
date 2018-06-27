@@ -9,6 +9,7 @@
 #include <tchar.h>
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
+#define NCURSES_MOUSE_VERSION 2
 #include <curses.h>
 #include <Psapi.h>
 #include "md5.h"
@@ -43,6 +44,7 @@ bool replayUsernameMatch();
 void debug(std::string debugStr);
 void printDebug();
 std::string getSurvivalHash();
+bool copyToClipboard(string source);
 
 float inGameTimerSubmit = 0.0;
 int gemsSubmit = 0;
@@ -56,8 +58,7 @@ float accuracySubmit = 0.0;
 int row, col;
 int rown;
 int leftAlign, rightAlign, centerAlign;
-int ch;
-MEVENT event;
+// int ch;
 
 string gameName = "Devil Daggers";
 LPCSTR gameWindow = "Devil Daggers";
@@ -159,9 +160,10 @@ int main() {
 	h.socket("/test")->emit("testing");
 
 	// set up curses
+	// MEVENT event;
 	WINDOW *stdscr = initscr();
 	raw();
-	nodelay(stdscr, true);
+	// nodelay(stdscr, true);
 	keypad(stdscr, true);
 	noecho();
 	start_color();
@@ -180,6 +182,7 @@ int main() {
 	init_pair(3, COLOR_MAGENTA, COLOR_BLACK);
 	init_pair(4, COLOR_YELLOW, COLOR_BLACK);
 	// mousemask(ALL_MOUSE_EVENTS, NULL);
+	// int ch;
 
 	HWND hGameWindow = NULL;
 	int timeSinceLastUpdate = clock();
@@ -191,7 +194,24 @@ int main() {
 
 	future_motd_response = getMOTD();
 
+	mouseinterval(500);
+
 	while (!GetAsyncKeyState(VK_F10)) {
+		// ch = getch();
+
+		//if (ch == KEY_MOUSE) {
+		//	if (getmouse(&event) == OK) {
+		//		if (event.bstate & BUTTON1_PRESSED) {
+		//			mvprintw(0, 0, "Mouse Event! x: %d y: %d", event.x, event.y);
+		//			copyToClipboard("hugga");
+		//		}
+		//	}
+		//}
+
+		if (GetAsyncKeyState(VK_LBUTTON) && (GetConsoleWindow() == GetForegroundWindow()) && !lastGameSubmission.empty()) {
+			copyToClipboard(lastGameSubmission);
+		}
+
 		if ((clock() - gameAvailTimer > 100) && validVersion) {
 			gameAvailTimer = clock();
 			isGameAvail = false;
@@ -262,8 +282,11 @@ int main() {
 					mvprintw(rown, leftAlign + 17, errorLine.c_str());
 					attroff(COLOR_PAIR(1));
 				} else if (!jsonResponse.empty()) {
+					std::ostringstream oss;
+					oss <<  "https://ddstats.com/game_log/" << to_string(jsonResponse.at("game_id").get<std::int32_t>());
+					lastGameSubmission = oss.str();
 					attron(COLOR_PAIR(2));
-					mvprintw(rown, leftAlign + 17, "https://ddstats.com/game_log/%s", to_string(jsonResponse.at("game_id").get<std::int32_t>()).c_str());
+					mvprintw(rown, leftAlign + 17, lastGameSubmission.c_str());
 
 					attroff(COLOR_PAIR(2));
 				} else {
@@ -909,4 +932,21 @@ std::string getSurvivalHash() {
 	std::stringstream ss;
 	ss << fp.rdbuf();
 	return md5(ss.str());
+}
+
+bool copyToClipboard(string source) {
+	if (OpenClipboard(NULL))
+	{
+		HGLOBAL clipbuffer;
+		char * buffer;
+		EmptyClipboard();
+		clipbuffer = GlobalAlloc(GMEM_DDESHARE, source.size() + 1);
+		buffer = (char*)GlobalLock(clipbuffer);
+		strcpy(buffer, LPCSTR(source.c_str()));
+		GlobalUnlock(clipbuffer);
+		SetClipboardData(CF_TEXT, clipbuffer);
+		CloseClipboard();
+		return true;
+	}
+	return false;
 }
