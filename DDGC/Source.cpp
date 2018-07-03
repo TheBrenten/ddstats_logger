@@ -19,7 +19,8 @@ using namespace std;
 using json = nlohmann::json;
 
 // current version
-std::string version = "0.2.4";
+std::string version = "0.3.1";
+std::string title = "DDSTATS v" + version;
 bool updateAvailable = false;
 bool validVersion = true;
 
@@ -83,6 +84,15 @@ string errorLine = "";
 std::string lastGameSubmission;
 std::string recordingStatus;
 json jsonResponse;
+
+// socketio VARS
+std::string sioStatus = "[[ Offline ]]";
+std::string playerIDNamespace;
+bool streaming = false;
+bool onlineToggle = true;
+double lastSioInGameTimerSubmit;
+int lastSioStatusSubmit = -2;
+int user_count = 0;
 
 // GAME VARS
 DWORD playerPointer = 0x001F30C0;
@@ -156,7 +166,10 @@ std::vector<std::string> debugVector;
 
  
 int main() {
+	SetConsoleTitle(title.c_str());
+
 	sio::client h;
+
 	h.connect("http://www.ddstats.com");
 	// h.connect("http://10.0.1.222:5666");
 
@@ -186,6 +199,7 @@ int main() {
 	// int ch;
 
 	HWND hGameWindow = NULL;
+	int timeSinceLastSubmission = clock();
 	int timeSinceLastUpdate = clock();
 	int gameAvailTimer = clock();
 	int onePressTimer = clock();
@@ -196,25 +210,31 @@ int main() {
 
 	future_motd_response = getMOTD();
 
-	// mouseinterval(500);
-
 	while (!GetAsyncKeyState(VK_F10)) {
-		// ch = getch();
 
-		//if (ch == KEY_MOUSE) {
-		//	if (getmouse(&event) == OK) {
-		//		if (event.bstate & BUTTON1_PRESSED) {
-		//			mvprintw(0, 0, "Mouse Event! x: %d y: %d", event.x, event.y);
-		//			copyToClipboard("hugga");
-		//		}
-		//	}
-		//}
+		if (live && !h.opened()) live = false;
 
-		if (!live && isGameAvail && (playerID != -1)) {
-			std::string test_msg = "testing";
-			h.socket()->emit("message", to_string(playerID));
+		if (!live && isGameAvail && (playerID != -1) && h.opened() && onlineToggle) {
+			// std::string test_msg = "testing";
+			h.socket()->emit("login", to_string(playerID));
 			live = true;
 		}
+
+		if (live && alive && (inGameTimer > 0.0) && onlineToggle) streaming = true;
+		else streaming = false;
+
+		//if (live && onlineToggle) {
+		//	h.socket("/stats")->on("update_user_count", sio::socket::event_listener_aux([&](string const& name, sio::message::ptr const& data, bool isAck, sio::message::list &ack_resp) {
+		//		// user_count = ev.get_message()->get_int();
+		//		user_count++;
+		//	}));
+		//}
+
+		if (live && !streaming && onlineToggle) {
+			sioStatus = "[[ Online ]]";
+		} else if (streaming) sioStatus = "[[ Streaming Stats ]]";
+		else if (!live && onlineToggle) sioStatus = "[[ Connecting... ]]";
+		else sioStatus = "[[ Offline ]]";
 
 		if (!lastGameSubmission.empty() && GetAsyncKeyState(VK_LBUTTON) && (GetConsoleWindow() == GetForegroundWindow())) {
 			copyToClipboard(lastGameSubmission);
@@ -244,7 +264,40 @@ int main() {
 				gameStatus = "[[ Devil Daggers not found ]]";
 			}
 
+			// SOCKETIO STUFF
+			// if the connection is made, and everything is connected and good.. submit stats...
+			if (clock() - timeSinceLastSubmission > 500) {
+				if (streaming || ((lastSioInGameTimerSubmit != inGameTimerSubmit) && !alive) || (!alive && lastSioStatusSubmit != deathType) ||
+					(alive && inGameTimer == 0.0 && lastSioStatusSubmit != -2)) {
+					lastSioInGameTimerSubmit = inGameTimer;
+					sio::message::list sioStatList;
+					sioStatList.push(sio::int_message::create(playerID));
+					sioStatList.push(sio::double_message::create(inGameTimer));
+					sioStatList.push(sio::int_message::create(gems));
+					sioStatList.push(sio::int_message::create(homingDaggers));
+					sioStatList.push(sio::int_message::create(enemiesAlive));
+					sioStatList.push(sio::int_message::create(enemiesKilled));
+					sioStatList.push(sio::int_message::create(daggersHit));
+					sioStatList.push(sio::int_message::create(daggersFired));
+					sioStatList.push(sio::double_message::create(levelTwo));
+					sioStatList.push(sio::double_message::create(levelThree));
+					sioStatList.push(sio::double_message::create(levelFour));
+					sioStatList.push(sio::bool_message::create(isReplay));
+					if (!alive) lastSioStatusSubmit = deathType;
+					else if (alive && inGameTimer == 0.0) lastSioStatusSubmit = -2; // in menu
+					else lastSioStatusSubmit = -1; // alive
+					sioStatList.push(sio::int_message::create(lastSioStatusSubmit));
+					h.socket("/stats")->emit("submit", sioStatList);
+					timeSinceLastSubmission = clock();
+				}
+			}
+
+			//h.socket("/stats")->on("get_status", [&](sio::event& ev) {
+			//	h.socket("/stats")->emit("status", sio::int_message::create(lastSioStatusSubmit));
+			//});
+
 			if (updateOnNextRun || clock() - timeSinceLastUpdate > 500) {
+
 				clear();
 				rown = 12; // row number
 
@@ -260,14 +313,20 @@ int main() {
 					attroff(COLOR_PAIR(1));
 				}
 
-				if (h.opened()) {
+				if (!isGameAvail && !live) {}
+				else if (live && onlineToggle) { // Online
 					attron(COLOR_PAIR(2));
-					mvprintw(rown-1, (col - 12) / 2, "[[ Online ]]");
+					mvprintw(rown-1, (col - sioStatus.length()) / 2, sioStatus.c_str());
 					attroff(COLOR_PAIR(2));
 				}
+				else if (!live && onlineToggle) { // Connecting
+					attron(COLOR_PAIR(4));
+					mvprintw(rown - 1, (col - sioStatus.length()) / 2, sioStatus.c_str());
+					attroff(COLOR_PAIR(4));
+				}
 				else {
-					attron(COLOR_PAIR(1));
-					mvprintw(rown-1, (col - 13) / 2, "[[ Offline ]]");
+					attron(COLOR_PAIR(1)); // Offline
+					mvprintw(rown-1, (col - sioStatus.length()) / 2, sioStatus.c_str());
 					attroff(COLOR_PAIR(1));
 				}
 
@@ -290,6 +349,7 @@ int main() {
 							jsonResponse = json::parse(r.text);
 							elapsed = r.elapsed;
 							errorLine = "";
+							h.socket("/stats")->emit("game_submitted", sio::int_message::create((int)jsonResponse.at("game_id").get<std::int32_t>()));
 							submitCounter++;
 						}
 						future_response = future<cpr::Response>{};
@@ -316,6 +376,12 @@ int main() {
 				}
 				rown++;
 				mvprintw(rown, leftAlign, "[F10] Exit");
+
+				if (updateAvailable) {
+					attron(COLOR_PAIR(2));
+					mvprintw(rown, rightAlign - 18, "(UPDATE AVAILABLE)");
+					attroff(COLOR_PAIR(2));
+				}
 
 				#if defined _DEBUG
 					printDebug();
@@ -362,6 +428,16 @@ int main() {
 						monitorStats = !monitorStats;
 						updateOnNextRun = true;
 					}
+				}
+			}
+
+			if (clock() - onePressTimer > 400) {
+				if (GetAsyncKeyState(VK_F12)) {
+					onePressTimer = clock();
+					onlineToggle = !onlineToggle;
+					if (!onlineToggle) h.close();
+					else h.connect("http://www.ddstats.com");
+					updateOnNextRun = true;
 				}
 			}
 
@@ -420,11 +496,7 @@ void printStatus() {
 			}
 		}
 	}
-	if (updateAvailable) {
-		attron(COLOR_PAIR(2));
-		mvprintw(rown - 1, leftAlign, "(UPDATE AVAILABLE)");
-		attroff(COLOR_PAIR(2));
-	}
+
 	mvprintw(rown, (col - motd.length()) / 2, "%s", motd.c_str());
 	rown++;
 	if (isGameAvail)
@@ -529,7 +601,7 @@ void commitVectors() {
 	enemiesAliveVector.push_back(enemiesAliveMax);
 	enemiesAliveMax = 0;
 	enemiesKilledVector.push_back(enemiesKilled);
-	if (gemsUpgrade >= 10 && levelTwo == 0.0) levelTwo = inGameTimer;
+	if (gemsUpgrade >= 10 && gemsUpgrade < 70 && levelTwo == 0.0) levelTwo = inGameTimer;
 	if (gemsUpgrade == 70 && levelThree == 0.0) levelThree = inGameTimer;
 	if (gemsUpgrade == 71 && levelFour == 0.0) levelFour = inGameTimer;
 }
@@ -611,6 +683,7 @@ void collectGameVars(HANDLE hProcHandle) {
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &pointer, sizeof(pointer), NULL);
 	pointerAddr = pointer + homingDaggersOffset;
 	ReadProcessMemory(hProcHandle, (LPCVOID)pointerAddr, &homingDaggers, sizeof(homingDaggers), NULL);
+	if (homingDaggers < 0) homingDaggers = 0; // fixes -1 bug
 	if ((homingDaggers > homingDaggersMaxTotal) && recording) {
 		homingDaggersMaxTotal = homingDaggers;
 		homingDaggersMaxTotalTime = inGameTimer;
