@@ -18,7 +18,7 @@
 using namespace std;
 using json = nlohmann::json;
 
-// current version
+// current version.
 std::string version = "0.3.2";
 std::string title = "DDSTATS v" + version;
 bool updateAvailable = false;
