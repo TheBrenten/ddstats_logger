@@ -19,7 +19,7 @@ using namespace std;
 using json = nlohmann::json;
 
 // current version
-std::string version = "0.3.1";
+std::string version = "0.3.2";
 std::string title = "DDSTATS v" + version;
 bool updateAvailable = false;
 bool validVersion = true;
@@ -262,6 +262,8 @@ int main() {
 				}
 			} else {
 				gameStatus = "[[ Devil Daggers not found ]]";
+				// this fixes a bug when people keep ddstats open, close dd, and restart dd (hopefully)
+				enemiesAlive = 0;
 			}
 
 			// SOCKETIO STUFF
