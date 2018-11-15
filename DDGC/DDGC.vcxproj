@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -132,6 +132,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="main.cpp" />
     <ClCompile Include="internal\sio_client_impl.cpp" />
     <ClCompile Include="internal\sio_packet.cpp" />
     <ClCompile Include="md5.cpp" />
@@ -140,8 +141,11 @@
     <ClCompile Include="Source.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="GameVar.h" />
+    <ClInclude Include="globals.h" />
     <ClInclude Include="internal\sio_client_impl.h" />
     <ClInclude Include="internal\sio_packet.h" />
+    <ClInclude Include="KeyObj.h" />
     <ClInclude Include="md5.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="resource1.h" />
@@ -149,12 +153,17 @@
     <ClInclude Include="sio_client.h" />
     <ClInclude Include="sio_message.h" />
     <ClInclude Include="sio_socket.h" />
+    <ClInclude Include="survival_original.h" />
+    <ClInclude Include="tools.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ddstats.rc" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\..\..\..\Downloads\ddstats_icon.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ddstats.aps" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
