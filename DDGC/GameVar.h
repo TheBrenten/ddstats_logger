@@ -20,41 +20,58 @@ class GameAddress {
     }
 
 public:
-    GameAddress(GameAddress &parent, int offset) {
-        this->parent = &parent;
-        this->offset = offset;
-    }
-    GameAddress(GameAddress* parent, int offset) {
-        this->parent = parent;
-        this->offset = offset;
-    }
+    GameAddress(GameAddress &parent, int offset) : parent(&parent), offset(offset) {}
+    GameAddress(GameAddress* parent, int offset) : parent( parent), offset(offset) {}
+
 
     template<typename T> void getValue(T &val) {
-        DWORD address = getBaseAddress() + offset;
-        ReadProcessMemory(handle, (LPCVOID)address, &val, sizeof(val), NULL);
+        try {
+            DWORD address = getBaseAddress() + offset;
+            ReadProcessMemory(handle, (LPCVOID)address, &val, sizeof(val), NULL);
+        }
+        catch (...) {
+            // set all the bytes of val to 0
+            for (int i = 0; i < sizeof(T); i++) {
+                char* ptr = static_cast<char*>((void*)(&val)) + i;
+                *ptr = '\0';
+                //std::cout << (void*)ptr << std::endl; // print the addresses
+                //Sleep(1000);
+            }
+        }
     }
     template<typename T> void setValue(T& val) {
-        DWORD address = getBaseAddress() + offset;
-        WriteProcessMemory(handle, (LPVOID)address, &val, sizeof(val), 0);
+        try {
+            DWORD address = getBaseAddress() + offset;
+            WriteProcessMemory(handle, (LPVOID)address, &val, sizeof(val), 0);
+        }
+        catch (...) {}
     }
 
     void getString(std::string& str) {
-        DWORD address = getBaseAddress() + offset;
-        DWORD size_address = address + 0x10;
-        int size;
-        ReadProcessMemory(handle, (LPCVOID)size_address, &size, sizeof(size), NULL);
-        size++; // for null terminator
-        char* charArray = new char[size];
-        DWORD alloc_address = address + 0x14;
-        int sizeToAlloc;
-        ReadProcessMemory(handle, (LPCVOID)alloc_address, &sizeToAlloc, sizeof(sizeToAlloc), NULL);
-        // adjust address
-        if (sizeToAlloc > 15)
-            ReadProcessMemory(handle, (LPCVOID)address, &address, sizeof(address), NULL);
-        ReadProcessMemory(handle, (LPCVOID)address, charArray, size, NULL);
-        //charArray[size - 1] = '\0';
-        str = charArray;
-        delete[] charArray;
+        char* charArray = nullptr;
+        try {
+            DWORD address = getBaseAddress() + offset;
+            DWORD size_address = address + 0x10;
+            int size;
+
+            ReadProcessMemory(handle, (LPCVOID)size_address, &size, sizeof(size), NULL);
+            size++; // for null terminator
+            charArray = new char[size];
+            DWORD alloc_address = address + 0x14;
+            int sizeToAlloc;
+            ReadProcessMemory(handle, (LPCVOID)alloc_address, &sizeToAlloc, sizeof(sizeToAlloc), NULL);
+            // adjust address
+            if (sizeToAlloc > 15)
+                ReadProcessMemory(handle, (LPCVOID)address, &address, sizeof(address), NULL);
+            ReadProcessMemory(handle, (LPCVOID)address, charArray, size, NULL);
+            str = charArray;
+        }
+        catch (...) {
+            str = "";
+        }
+        // free memory regardless of exceptions
+        if (charArray)
+            delete[] charArray;
     }
 
 };
